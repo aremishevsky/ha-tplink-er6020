@@ -1,0 +1,35 @@
+# person.me should combine both trackers (Settings → People → me):
+#   - device_tracker.<iphone>      (HA Companion app: GPS / home Wi-Fi)
+#   - device_tracker.<iphone_mac>  (this integration: router ARP table)
+# Replace switch names with the ones created for your two rules.
+
+- alias: "Router: open ports when away"
+  triggers:
+    - trigger: state
+      entity_id: person.me
+      from: home
+      for: "00:10:00"
+  actions:
+    - action: switch.turn_on
+      target:
+        entity_id:
+          - switch.tl_er6020_port_forward_rule_1
+          - switch.tl_er6020_port_forward_rule_2
+
+- alias: "Router: close ports when home"
+  triggers:
+    - trigger: state
+      entity_id: person.me
+      to: home
+    - trigger: homeassistant
+      event: start
+  conditions:
+    - condition: state
+      entity_id: person.me
+      state: home
+  actions:
+    - action: switch.turn_off
+      target:
+        entity_id:
+          - switch.tl_er6020_port_forward_rule_1
+          - switch.tl_er6020_port_forward_rule_2

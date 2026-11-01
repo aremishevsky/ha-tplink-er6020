@@ -1,0 +1,12 @@
+{
+  "domain": "tplink_er6020",
+  "name": "TP-Link TL-ER6020",
+  "codeowners": ["@aremishevsky"],
+  "config_flow": true,
+  "documentation": "https://github.com/aremishevsky/ha-tplink-er6020",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/aremishevsky/ha-tplink-er6020/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
