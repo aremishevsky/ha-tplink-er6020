@@ -110,7 +110,7 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
             "controlled": self._rule_name in self.coordinator.config_entry.options.get(CONF_RULES, []),
             "last_on": last["on"],
             "last_off": last["off"],
-            "log": log,
+            "log": list(log),
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -139,7 +139,7 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
         ):
             name = c.display_name(self._rule_name)
             message = (
-                f"🚨 Port opened manually: {name}" if enabled else f"✅ Port closed manually: {name}"
+                f"⚠️ Port opened manually: {name}" if enabled else f"✅ Port closed manually: {name}"
             )
             if pause:
                 message += " — automation turned off"
@@ -192,7 +192,8 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
             "tracked_device": opts.get(CONF_TRACKED_MAC),
             "tracked_name": self._tracked_name(),
             "poll_interval": poll_interval(opts),
-            "presence_log": c.presence_log,
+            # Copies: HA diffs old/new attributes, an in-place mutated list looks unchanged.
+            "presence_log": list(c.presence_log),
             "controlled_rules": opts.get(CONF_RULES, []),
             "away_delay": opts.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY),
             "active_from": opts.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM),

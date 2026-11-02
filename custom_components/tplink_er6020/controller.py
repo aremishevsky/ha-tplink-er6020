@@ -42,7 +42,7 @@ RETRY_INTERVAL = timedelta(minutes=2)
 _KEEP = object()
 
 MESSAGES = {
-    SOURCE_AWAY: "🚨 Ports opened (you left home): {}",
+    SOURCE_AWAY: "⚠️ Ports opened (you left home): {}",
     SOURCE_HOME: "✅ Ports closed (you're home): {}",
     SOURCE_SCHEDULE: "✅ Ports closed (outside active hours): {}",
 }
@@ -143,7 +143,7 @@ class PortController:
                 if self._failed != decision:
                     self._failed = decision
                     if notifications_enabled(self.entry.options):
-                        await async_notify(self.hass, notify_targets(self.entry.options), f"⚠️ {message}")
+                        await async_notify(self.hass, notify_targets(self.entry.options), f"🚨 {message}")
                 return
             self._failed = self._retry_at = None
             self._applied = decision

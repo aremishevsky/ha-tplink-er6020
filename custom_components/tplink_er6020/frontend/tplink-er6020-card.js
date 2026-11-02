@@ -499,7 +499,7 @@ class TplinkEr6020Card extends HTMLElement {
     </div>` : "";
 
     const auto = e.automation && this._hass.states[e.automation];
-    if (!auto) return pollingSection + presenceSection;
+    if (!auto) return presenceSection + pollingSection;
     const on = auto.state === "on";
     const state = !on ? "disabled" : !polling ? "paused" : a.automation;
     const device = who;
@@ -521,7 +521,7 @@ class TplinkEr6020Card extends HTMLElement {
           : t.schedule_off_short],
       ])}
     </div>`;
-    return pollingSection + presenceSection + automationSection;
+    return presenceSection + pollingSection + automationSection;
   }
 
   _switch(id, on, disabled = false, extra = "") {
