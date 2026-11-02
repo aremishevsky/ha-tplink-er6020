@@ -11,10 +11,8 @@ import asyncio
 from datetime import datetime, time, timedelta
 import logging
 
-from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .api import ER6020Error
@@ -24,7 +22,6 @@ from .const import (
     CONF_AWAY_DELAY,
     CONF_NOTIFY_ON_CLOSE,
     CONF_NOTIFY_ON_OPEN,
-    CONF_NOTIFY_SERVICE,
     CONF_RULES,
     CONF_TRACKED_MAC,
     DEFAULT_ACTIVE_FROM,
@@ -36,6 +33,7 @@ from .const import (
     SOURCE_SCHEDULE,
 )
 from .coordinator import ER6020Coordinator
+from .notify import async_notify, notify_targets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,6 +67,7 @@ class PortController:
         self._last_seen = dt_util.utcnow()
         # Last applied decision; None = nothing applied yet.
         self._applied: tuple[bool, str] | None = None
+        self._failed: tuple[bool, str] | None = None
         self._lock = asyncio.Lock()
 
     @callback
@@ -110,8 +109,17 @@ class PortController:
             try:
                 await self._apply(*decision)
             except ER6020Error as err:
-                _LOGGER.error("Failed to %s ports: %s", "open" if decision[0] else "close", err)
-                return  # retry on next poll
+                action = "open" if decision[0] else "close"
+                _LOGGER.error("Failed to %s ports: %s", action, err)
+                self._set_state("error")
+                # Alert once per decision; it is retried on every poll.
+                if self._failed != decision:
+                    self._failed = decision
+                    await async_notify(
+                        self.hass, notify_targets(self.entry.options), f"Failed to {action} ports: {err}"
+                    )
+                return
+            self._failed = None
             self._applied = decision
 
     @callback
@@ -137,18 +145,6 @@ class PortController:
         _LOGGER.info("%s ports (%s): %s", "Opened" if enable else "Closed", source, ", ".join(changed))
         opts = self.entry.options
         if opts.get(CONF_NOTIFY_ON_OPEN if enable else CONF_NOTIFY_ON_CLOSE, True):
-            await self._notify(MESSAGES[source].format(", ".join(changed)))
-
-    async def _notify(self, message: str) -> None:
-        title = "AutoPortOnOff"
-        if service := self.entry.options.get(CONF_NOTIFY_SERVICE):
-            try:
-                await self.hass.services.async_call(
-                    "notify", service, {"title": title, "message": message}, blocking=True
-                )
-                return
-            except HomeAssistantError as err:
-                _LOGGER.warning("notify.%s failed: %s", service, err)
-        persistent_notification.async_create(
-            self.hass, message, title, notification_id=f"{DOMAIN}_{self.entry.entry_id}"
-        )
+            await async_notify(
+                self.hass, notify_targets(opts), MESSAGES[source].format(", ".join(changed))
+            )

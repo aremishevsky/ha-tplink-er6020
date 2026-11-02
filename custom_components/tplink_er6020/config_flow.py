@@ -37,7 +37,8 @@ from .const import (
     CONF_AWAY_DELAY,
     CONF_NOTIFY_ON_CLOSE,
     CONF_NOTIFY_ON_OPEN,
-    CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_SERVICES,
+    CONF_SEND_TEST,
     CONF_RULES,
     CONF_TRACKED_MAC,
     DEFAULT_ACTIVE_FROM,
@@ -48,6 +49,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import Client, RouterData, fetch_router_data
+from .notify import HA_UI, async_notify, notify_targets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,11 +98,13 @@ def settings_schema(
     ]
     selected_rules = [r for r in defaults.get(CONF_RULES, []) if r in router.virtual_servers]
 
-    notify_services = sorted(
-        s
-        for s in hass.services.async_services().get("notify", {})
-        if s not in ("send_message", "persistent_notification")
+    services = sorted(
+        s for s in hass.services.async_services().get("notify", {}) if s not in ("send_message", HA_UI)
     )
+    channels = [SelectOptionDict(value=HA_UI, label="Home Assistant UI (notification bell)")] + [
+        SelectOptionDict(value=s, label=f"notify.{s}") for s in services
+    ]
+    selected_channels = [t for t in notify_targets(defaults) if t == HA_UI or t in services]
 
     tracked_key = (
         vol.Required(CONF_TRACKED_MAC, default=tracked)
@@ -134,18 +138,32 @@ def settings_schema(
             vol.Required(
                 CONF_NOTIFY_ON_CLOSE, default=defaults.get(CONF_NOTIFY_ON_CLOSE, True)
             ): BooleanSelector(),
-            vol.Optional(
-                CONF_NOTIFY_SERVICE,
-                description={"suggested_value": defaults.get(CONF_NOTIFY_SERVICE)},
-            ): SelectSelector(
-                SelectSelectorConfig(options=notify_services, mode=SelectSelectorMode.DROPDOWN)
+            vol.Optional(CONF_NOTIFY_SERVICES, default=selected_channels): SelectSelector(
+                SelectSelectorConfig(options=channels, multiple=True, mode=SelectSelectorMode.LIST)
             ),
+            vol.Optional(CONF_SEND_TEST, default=False): BooleanSelector(),
         }
     )
 
 
 def _normalize(user_input: dict[str, Any]) -> dict[str, Any]:
-    return {**user_input, CONF_AWAY_DELAY: int(user_input[CONF_AWAY_DELAY])}
+    data = {**user_input, CONF_AWAY_DELAY: int(user_input[CONF_AWAY_DELAY])}
+    data.pop(CONF_SEND_TEST, None)
+    data.setdefault(CONF_NOTIFY_SERVICES, [])
+    return data
+
+
+async def _send_test(hass: HomeAssistant, targets: list[str]) -> str:
+    """Send a test notification; return a line for the form description."""
+    if not targets:
+        return "⚠️ Select at least one notification channel."
+    errors = await async_notify(hass, targets, "Test notification — notifications work ✅")
+    parts = []
+    if ok := [t for t in targets if t not in errors]:
+        parts.append("✅ Test sent to: " + ", ".join(ok))
+    if errors:
+        parts.append("⚠️ Failed: " + "; ".join(f"{t} ({e})" for t, e in errors.items()))
+    return "\n\n".join(parts) + "\n\nUntick *Send a test notification* and press Submit to save."
 
 
 class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -177,14 +195,19 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         assert self._router is not None
+        result = ""
         if user_input is not None:
-            return self.async_create_entry(
-                title=f"AutoPortOnOff ({self._credentials[CONF_HOST]})",
-                data=self._credentials,
-                options=_normalize(user_input),
-            )
+            if not user_input.get(CONF_SEND_TEST):
+                return self.async_create_entry(
+                    title=f"AutoPortOnOff ({self._credentials[CONF_HOST]})",
+                    data=self._credentials,
+                    options=_normalize(user_input),
+                )
+            result = await _send_test(self.hass, user_input.get(CONF_NOTIFY_SERVICES, []))
         return self.async_show_form(
-            step_id="settings", data_schema=settings_schema(self.hass, self._router, {})
+            step_id="settings",
+            data_schema=settings_schema(self.hass, self._router, _normalize(user_input) if user_input else {}),
+            description_placeholders={"test_result": result},
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
@@ -231,13 +254,19 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class ER6020OptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            return self.async_create_entry(data=_normalize(user_input))
-
         coordinator = getattr(self.config_entry, "runtime_data", None)
         if coordinator is None or coordinator.data is None:
             return self.async_abort(reason="not_loaded")
+
+        result = ""
+        defaults: Mapping[str, Any] = self.config_entry.options
+        if user_input is not None:
+            if not user_input.get(CONF_SEND_TEST):
+                return self.async_create_entry(data=_normalize(user_input))
+            result = await _send_test(self.hass, user_input.get(CONF_NOTIFY_SERVICES, []))
+            defaults = _normalize(user_input)
         return self.async_show_form(
             step_id="init",
-            data_schema=settings_schema(self.hass, coordinator.data, self.config_entry.options),
+            data_schema=settings_schema(self.hass, coordinator.data, defaults),
+            description_placeholders={"test_result": result},
         )

@@ -120,6 +120,9 @@ class ER6020Client:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise ER6020Error(f"Request to {path} failed: {err}") from err
 
+        if path != URL_LOGIN:  # never log credentials
+            _LOGGER.debug("POST %s %s -> HTTP %s %s", path, payload, resp.status, text[:1000])
+
         try:
             return json.loads(text)
         except ValueError as err:

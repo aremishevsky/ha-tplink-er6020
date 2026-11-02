@@ -31,6 +31,7 @@ const I18N = {
       leaving: "Waiting for away delay",
       schedule: "Night — ports closed",
       paused: "Polling off — automation paused",
+      error: "Failed to change ports — see notification / logs",
     },
     editor: {
       title: "Title",

@@ -10,7 +10,9 @@ CONF_ACTIVE_FROM = "active_from"
 CONF_ACTIVE_TO = "active_to"
 CONF_NOTIFY_ON_OPEN = "notify_on_open"
 CONF_NOTIFY_ON_CLOSE = "notify_on_close"
-CONF_NOTIFY_SERVICE = "notify_service"
+CONF_NOTIFY_SERVICE = "notify_service"  # legacy single channel (<= 0.3.0)
+CONF_NOTIFY_SERVICES = "notify_services"
+CONF_SEND_TEST = "send_test"
 
 DEFAULT_HOST = "192.168.0.1"
 DEFAULT_USERNAME = "admin"
