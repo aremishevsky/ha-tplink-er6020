@@ -19,8 +19,12 @@ const I18N = {
     never: "no changes yet",
     details: "Details",
     ports_section: "Ports",
-    polling_desc: "Reads the router every {interval}: whether your device is home and the state of the ports. Turn it off while you use the router web UI — the router allows only one admin session, so polling would log you out. While off, no requests are sent; ports can still be switched manually.",
-    automation_desc: "Opens the automated ports when {device} has been away for {delay} min and closes them as soon as it is back. A manual change of an automated port turns the automation off.",
+    polling_desc: "Reads presence and port states from the router every {interval}. Turn off while using the router web UI (it allows one admin session).",
+    automation_desc: "Opens automated ports when {device} is away for {delay} min, closes them when it's back.",
+    presence: "Presence",
+    presence_desc: "When the router last saw {device} leave or come back.",
+    show_more: "Show more ({n})",
+    show_less: "Show less",
     st_last_update: "Last update",
     st_interval: "Interval",
     st_status: "Status",
@@ -189,6 +193,12 @@ const STYLE = `
   .kv dt { color: var(--secondary-text-color); }
   .kv dd { margin: 0; overflow-wrap: anywhere; }
   .kv dd.err { color: var(--error-color, #db4437); }
+  .icon.home { background: rgba(76,175,80,.2); color: var(--success-color, #4caf50); }
+  .more { margin: 4px 0 0 68px; padding: 2px 0; background: none; border: none; color: var(--primary-color);
+          cursor: pointer; font: inherit; font-size: .85em; }
+  .section .log { padding-left: 68px; }
+  .port .more { margin-left: 52px; }
+  .section .empty { padding-left: 68px; }
   .section-title { padding: 16px 16px 4px; font-weight: 500; color: var(--secondary-text-color); text-transform: uppercase;
                    font-size: .75em; letter-spacing: .05em; }
   .dialog.small { width: min(420px, calc(100vw - 32px)); }
@@ -214,6 +224,7 @@ class TplinkEr6020Card extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._open = false;
     this._busy = new Set();
+    this._expanded = new Set();
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     // Long press (hold_action) on buttons: works for mouse and touch.
     this.shadowRoot.addEventListener("pointerdown", (ev) => this._holdStart(ev));
@@ -297,6 +308,7 @@ class TplinkEr6020Card extends HTMLElement {
     const sig = JSON.stringify([
       this._open,
       this._confirm,
+      [...this._expanded],
       [...this._busy],
       ids.map((id) => this._hass.states[id]?.last_updated),
       this._config,
@@ -432,6 +444,19 @@ class TplinkEr6020Card extends HTMLElement {
     return `<div class="grid" style="--cols:${Number(this._config.columns) || 4}">${items.join("")}</div>`;
   }
 
+  _logList(key, events, item) {
+    // Newest first; 3 shown until expanded.
+    const list = [...(events || [])].reverse();
+    if (!list.length) return null;
+    const expanded = this._expanded.has(key);
+    const shown = expanded ? list : list.slice(0, 3);
+    const t = I18N[lang(this._hass)];
+    const more = list.length > 3
+      ? `<button class="more" data-more="${esc(key)}">${expanded ? t.show_less : t.show_more.replace("{n}", list.length - 3)}</button>`
+      : "";
+    return `<ul class="log">${shown.map(item).join("")}</ul>${more}`;
+  }
+
   _controlSections(t, e) {
     const pol = e.polling && this._hass.states[e.polling];
     if (!pol) return "";
@@ -458,11 +483,26 @@ class TplinkEr6020Card extends HTMLElement {
       ])}
     </div>`;
 
+    const p = e.presence && this._hass.states[e.presence];
+    const home = p?.state === "home", away = p?.state === "not_home";
+    const who = a.tracked_name || a.tracked_device || "?";
+    const presenceLog = this._logList("presence", a.presence_log, (ev) =>
+      `<li><span class="t">${fmt(this._hass, ev.ts)}</span><span class="s ${ev.state === "home" ? "off" : "on"}">${ev.state === "home" ? t.home : t.away}</span></li>`);
+    const presenceSection = p || (a.presence_log || []).length ? `<div class="section">
+      <div class="row">
+        <div class="icon ${home ? "home" : away ? "on" : ""}"><ha-icon icon="${home ? "mdi:home" : away ? "mdi:home-export-outline" : "mdi:help"}"></ha-icon></div>
+        <div class="info"><div class="name">${t.presence}</div>
+          <div class="sub">${home ? t.home : away ? t.away : t.unknown}${p && (home || away) ? ` ${t.since} ${fmt(this._hass, p.last_changed)}` : ""}</div></div>
+      </div>
+      <div class="desc">${esc(t.presence_desc.replace("{device}", who))}</div>
+      ${presenceLog || `<div class="empty">${t.no_events}</div>`}
+    </div>` : "";
+
     const auto = e.automation && this._hass.states[e.automation];
-    if (!auto) return pollingSection;
+    if (!auto) return pollingSection + presenceSection;
     const on = auto.state === "on";
     const state = !on ? "disabled" : !polling ? "paused" : a.automation;
-    const device = a.tracked_name || a.tracked_device || "?";
+    const device = who;
     const rules = a.controlled_rules || [];
     const automationSection = `<div class="section">
       <div class="row">
@@ -481,7 +521,7 @@ class TplinkEr6020Card extends HTMLElement {
           : t.schedule_off_short],
       ])}
     </div>`;
-    return pollingSection + automationSection;
+    return pollingSection + presenceSection + automationSection;
   }
 
   _switch(id, on, disabled = false, extra = "") {
@@ -514,16 +554,10 @@ class TplinkEr6020Card extends HTMLElement {
   _dialog(t, e) {
     const ports = e.all
       .map((id) => {
-        const log = [...(this._hass.states[id]?.attributes?.log || [])].reverse();
-        const items = log.length
-          ? `<ul class="log">${log
-              .map(
-                (ev) => `<li><span class="t">${fmt(this._hass, ev.ts)}</span>
-                  <span class="s ${ev.state}">${ev.state === "on" ? t.open : t.closed}</span>
-                  <span>${esc(t.src[ev.source] || ev.source)}</span></li>`
-              )
-              .join("")}</ul>`
-          : `<div class="empty">${t.no_events}</div>`;
+        const items =
+          this._logList(id, this._hass.states[id]?.attributes?.log, (ev) => `<li><span class="t">${fmt(this._hass, ev.ts)}</span>
+            <span class="s ${ev.state}">${ev.state === "on" ? t.open : t.closed}</span>
+            <span>${esc(t.src[ev.source] || ev.source)}</span></li>`) || `<div class="empty">${t.no_events}</div>`;
         return `<div class="port ${id === this._focus ? "focus" : ""}" data-port="${esc(id)}">${this._row(t, id)}${items}</div>`;
       })
       .join("");
@@ -548,6 +582,7 @@ class TplinkEr6020Card extends HTMLElement {
   _setOpen(open, focus = null) {
     this._open = open;
     this._focus = open ? focus : null;
+    if (!open) this._expanded.clear();
     this._render();
     if (open && focus) {
       this.shadowRoot.querySelector(`.port[data-port="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
@@ -581,6 +616,14 @@ class TplinkEr6020Card extends HTMLElement {
     }
     const path = ev.composedPath();
     // Buttons answer; a click on the backdrop itself cancels, clicks inside the dialog don't.
+    const more = path.find((el) => el.dataset?.more);
+    if (more) {
+      ev.stopPropagation();
+      const key = more.dataset.more;
+      this._expanded.has(key) ? this._expanded.delete(key) : this._expanded.add(key);
+      this._render();
+      return;
+    }
     const answer = path.find((el) => el.dataset?.confirm && (el.tagName === "BUTTON" || el === path[0]));
     if (!answer && this._confirm) return;
     if (answer) {

@@ -155,6 +155,8 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
     _attr_has_entity_name = True
     _attr_name = "Router polling"
     _attr_entity_category = EntityCategory.CONFIG
+    # For the card; keep it out of the recorder database.
+    _unrecorded_attributes = frozenset({"presence_log"})
 
     def __init__(self, coordinator: ER6020Coordinator) -> None:
         super().__init__(coordinator)
@@ -190,6 +192,7 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
             "tracked_device": opts.get(CONF_TRACKED_MAC),
             "tracked_name": self._tracked_name(),
             "poll_interval": poll_interval(opts),
+            "presence_log": c.presence_log,
             "controlled_rules": opts.get(CONF_RULES, []),
             "away_delay": opts.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY),
             "active_from": opts.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM),

@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import ER6020AuthError, ER6020Client, ER6020Error
-from .const import DOMAIN, LOG_SIZE, SOURCE_ROUTER, poll_interval
+from .const import CONF_TRACKED_MAC, DOMAIN, LOG_SIZE, SOURCE_ROUTER, poll_interval
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,6 +174,8 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
                 if old is not None and old.get("enable") != rule.get("enable"):
                     self._log(name, rule.get("enable") == "on", SOURCE_ROUTER)
 
+        self._track_presence(data)
+
         new_cache = data.to_cache()
         if new_cache != cache:
             self._stored["cache"] = new_cache
@@ -211,6 +213,25 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
 
     def display_names(self, rules: list[str]) -> str:
         return ", ".join(self.display_name(r) for r in rules)
+
+    def _track_presence(self, data: RouterData) -> None:
+        """Log Home/Away changes of the tracked device as seen by the router."""
+        mac = self.config_entry.options.get(CONF_TRACKED_MAC)
+        if not mac or data.present is None:
+            return
+        state = "home" if mac in data.present else "away"
+        previous = self._stored.get("presence_last")
+        self._stored["presence_last"] = state
+        if previous is None or previous == state:
+            return
+        events = self._stored.setdefault("presence_log", [])
+        events.append({"ts": dt_util.utcnow().isoformat(), "state": state})
+        del events[:-LOG_SIZE]
+        self._save()
+
+    @property
+    def presence_log(self) -> list[dict[str, str]]:
+        return self._stored.get("presence_log", [])
 
     def rule_log(self, name: str) -> list[dict[str, str]]:
         return self._stored["log"].get(name, [])
