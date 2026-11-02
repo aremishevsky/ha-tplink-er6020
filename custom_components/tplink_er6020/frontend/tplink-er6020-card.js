@@ -11,14 +11,26 @@ const I18N = {
     polling: "Router polling",
     polling_short: "Polling",
     automation: "Automation",
-    schedule_off: "Schedule: off (always active)",
     updated: "Updated",
     not_updated: "No data from the router yet",
     open: "Open",
     closed: "Closed",
     since: "since",
     never: "no changes yet",
-    details: "Ports",
+    details: "Details",
+    ports_section: "Ports",
+    polling_desc: "Reads the router every {interval}: whether your device is home and the state of the ports. Turn it off while you use the router web UI — the router allows only one admin session, so polling would log you out. While off, no requests are sent; ports can still be switched manually.",
+    automation_desc: "Opens the automated ports when {device} has been away for {delay} min and closes them as soon as it is back. A manual change of an automated port turns the automation off.",
+    st_last_update: "Last update",
+    st_interval: "Interval",
+    st_status: "Status",
+    st_device: "Tracked device",
+    st_delay: "Away delay",
+    st_ports: "Automated ports",
+    st_schedule: "Schedule",
+    st_none: "none",
+    schedule_desc: "{from}–{to}, ports are always closed outside these hours",
+    schedule_off_short: "off — active around the clock",
     no_events: "No events yet",
     hint: "Tap for details",
     confirm_title: "Turn off automation?",
@@ -167,6 +179,14 @@ const STYLE = `
   .dialog .header { position: sticky; top: 0; background: inherit; z-index: 1;
                     border-bottom: 1px solid var(--divider-color); padding-bottom: 12px; }
   .backdrop.confirm { z-index: 1001; }
+  .section { border-bottom: 1px solid var(--divider-color); padding-bottom: 12px; }
+  .desc { padding: 0 16px 8px 68px; color: var(--secondary-text-color); font-size: .85em; line-height: 1.4; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; padding: 0 16px 0 68px; font-size: .85em; }
+  .kv dt { color: var(--secondary-text-color); }
+  .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .kv dd.err { color: var(--error-color, #db4437); }
+  .section-title { padding: 16px 16px 4px; font-weight: 500; color: var(--secondary-text-color); text-transform: uppercase;
+                   font-size: .75em; letter-spacing: .05em; }
   .dialog.small { width: min(420px, calc(100vw - 32px)); }
   .ctext { padding: 8px 16px 0; color: var(--secondary-text-color); line-height: 1.4; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; flex-wrap: wrap; }
@@ -408,10 +428,56 @@ class TplinkEr6020Card extends HTMLElement {
     return `<div class="grid" style="--cols:${Number(this._config.columns) || 4}">${items.join("")}</div>`;
   }
 
-  _schedule(t, e) {
-    const a = (e.polling && this._hass.states[e.polling]?.attributes) || {};
-    if (!a.schedule_enabled) return t.schedule_off;
-    return `${t.active_hours}: ${(a.active_from || "").slice(0, 5)}–${(a.active_to || "").slice(0, 5)}`;
+  _controlSections(t, e) {
+    const pol = e.polling && this._hass.states[e.polling];
+    if (!pol) return "";
+    const a = pol.attributes;
+    const dur = (sec) => (sec % 60 ? `${sec} s` : `${sec / 60} min`);
+    const kv = (rows) =>
+      `<dl class="kv">${rows
+        .filter(([, v]) => v !== undefined && v !== null && v !== "")
+        .map(([k, v, cls = ""]) => `<dt>${esc(k)}</dt><dd class="${cls}">${esc(v)}</dd>`)
+        .join("")}</dl>`;
+
+    const polling = pol.state === "on";
+    const pollingSection = `<div class="section">
+      <div class="row">
+        <div class="icon ${a.error ? "error" : ""}"><ha-icon icon="${a.error ? "mdi:alert-circle" : polling ? "mdi:sync" : "mdi:sync-off"}"></ha-icon></div>
+        <div class="info"><div class="name">${t.polling}</div></div>
+        ${this._switch(e.polling, polling, false, a.error ? "error" : "")}
+      </div>
+      <div class="desc">${esc(t.polling_desc.replace("{interval}", dur(a.poll_interval || 120)))}</div>
+      ${kv([
+        [t.st_last_update, a.last_update ? fmt(this._hass, a.last_update) : t.not_updated],
+        [t.st_interval, dur(a.poll_interval || 120)],
+        [t.st_status, a.error || (polling ? t.on : t.off), a.error ? "err" : ""],
+      ])}
+    </div>`;
+
+    const auto = e.automation && this._hass.states[e.automation];
+    if (!auto) return pollingSection;
+    const on = auto.state === "on";
+    const state = !on ? "disabled" : !polling ? "paused" : a.automation;
+    const device = a.tracked_name || a.tracked_device || "?";
+    const rules = a.controlled_rules || [];
+    const automationSection = `<div class="section">
+      <div class="row">
+        <div class="icon ${on ? "" : "off"}"><ha-icon icon="${on ? "mdi:robot" : "mdi:robot-off"}"></ha-icon></div>
+        <div class="info"><div class="name">${t.automation}${a.schedule_enabled ? ' <ha-icon class="clock" icon="mdi:clock-outline"></ha-icon>' : ""}</div></div>
+        ${this._switch(e.automation, on)}
+      </div>
+      <div class="desc">${esc(t.automation_desc.replace("{device}", device).replace("{delay}", a.away_delay ?? "?"))}</div>
+      ${kv([
+        [t.st_status, t.auto[state] || "—"],
+        [t.st_device, a.tracked_device ? `${device}${a.tracked_name ? ` (${a.tracked_device.toUpperCase()})` : ""}` : ""],
+        [t.st_delay, a.away_delay !== undefined ? `${a.away_delay} min` : ""],
+        [t.st_ports, rules.length ? rules.join(", ") : t.st_none],
+        [t.st_schedule, a.schedule_enabled
+          ? t.schedule_desc.replace("{from}", (a.active_from || "").slice(0, 5)).replace("{to}", (a.active_to || "").slice(0, 5))
+          : t.schedule_off_short],
+      ])}
+    </div>`;
+    return pollingSection + automationSection;
   }
 
   _switch(id, on, disabled = false, extra = "") {
@@ -457,8 +523,9 @@ class TplinkEr6020Card extends HTMLElement {
         return `<div class="port ${id === this._focus ? "focus" : ""}" data-port="${esc(id)}">${this._row(t, id)}${items}</div>`;
       })
       .join("");
-    const schedule = `<div class="auto schedule"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(this._schedule(t, e))}</div>`;
-    return `<div class="backdrop" data-backdrop><div class="dialog">${this._header(t, e, true)}${schedule}${ports}</div></div>`;
+    return `<div class="backdrop" data-backdrop><div class="dialog">${this._header(t, e, true)}
+      ${this._controlSections(t, e)}
+      <div class="section-title">${t.ports_section}</div>${ports}</div></div>`;
   }
 
   _confirmDialog(t) {

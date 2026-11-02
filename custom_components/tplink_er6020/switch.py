@@ -27,6 +27,7 @@ from .const import (
     DEFAULT_AWAY_DELAY,
     DOMAIN,
     SOURCE_MANUAL,
+    poll_interval,
 )
 from .coordinator import ER6020Coordinator
 from .notify import async_notify, notifications_enabled, notify_targets
@@ -187,11 +188,19 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
             "error": error,
             "last_update": c.last_poll,
             "tracked_device": opts.get(CONF_TRACKED_MAC),
+            "tracked_name": self._tracked_name(),
+            "poll_interval": poll_interval(opts),
             "controlled_rules": opts.get(CONF_RULES, []),
             "away_delay": opts.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY),
             "active_from": opts.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM),
             "active_to": opts.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO),
         }
+
+    def _tracked_name(self) -> str | None:
+        mac = self.coordinator.config_entry.options.get(CONF_TRACKED_MAC)
+        data = self.coordinator.data
+        client = data.clients.get(mac) if data and mac else None
+        return client.name if client else None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_polling(True)
