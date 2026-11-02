@@ -9,6 +9,8 @@ const I18N = {
     away: "Away",
     unknown: "Unknown",
     polling: "Router polling",
+    updated: "Updated",
+    not_updated: "No data from the router yet",
     open: "Open",
     closed: "Closed",
     since: "since",
@@ -31,7 +33,7 @@ const I18N = {
       leaving: "Waiting for away delay",
       schedule: "Night — ports closed",
       paused: "Polling off — automation paused",
-      error: "Failed to change ports — see notification / logs",
+      error: "Automation error",
     },
     editor: {
       title: "Title",
@@ -86,8 +88,13 @@ const STYLE = `
   .chip ha-icon { --mdc-icon-size: 16px; }
   .auto { padding: 0 16px 8px; color: var(--secondary-text-color); font-size: .85em; }
   .row { display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
-  .row ha-icon { color: var(--state-icon-color); }
-  .row ha-icon.on { color: var(--warning-color, #ff9800); }
+  .icon { flex: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center;
+          justify-content: center; background: var(--secondary-background-color); color: var(--state-icon-color); }
+  .icon.on { background: rgba(255,152,0,.2); color: var(--warning-color, #ff9800); }
+  .icon.error { background: rgba(219,68,55,.15); color: var(--error-color, #db4437); }
+  .sw.on.error { background: var(--error-color, #db4437); }
+  .err { color: var(--error-color, #db4437); font-size: .85em; overflow-wrap: anywhere; }
+  .auto .err { margin-top: 2px; }
   .info { flex: 1; min-width: 0; }
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { color: var(--secondary-text-color); font-size: .85em; }
@@ -236,16 +243,29 @@ class TplinkEr6020Card extends HTMLElement {
     ]
       .filter(Boolean)
       .join(" · ");
-    const toggle = this._config.show_polling
-      ? `<div class="row"><ha-icon icon="${pol.state === "on" ? "mdi:sync" : "mdi:sync-off"}"></ha-icon>
-           <div class="info"><div class="name">${t.polling}</div></div>${this._switch(e.polling, pol.state === "on")}</div>`
+    const on = pol.state === "on";
+    const error = a.error
+      ? `<div class="err" title="${esc(a.error)}">⚠ ${esc(a.error.length > 120 ? `${a.error.slice(0, 117)}…` : a.error)}</div>`
       : "";
-    return `${toggle}${text ? `<div class="auto">${esc(text)}</div>` : ""}`;
+    const updated = a.last_update ? `${t.updated} ${fmt(this._hass, a.last_update)}` : t.not_updated;
+    const toggle = this._config.show_polling
+      ? `<div class="row">
+           <div class="icon ${a.error ? "error" : ""}">
+             <ha-icon icon="${a.error ? "mdi:alert-circle" : on ? "mdi:sync" : "mdi:sync-off"}"></ha-icon>
+           </div>
+           <div class="info"><div class="name">${t.polling}</div><div class="sub">${esc(updated)}</div>${error}</div>
+           ${this._switch(e.polling, on, false, a.error ? "error" : "")}
+         </div>`
+      : "";
+    const auto = text || (!this._config.show_polling && error)
+      ? `<div class="auto">${esc(text)}${this._config.show_polling ? "" : error}</div>`
+      : "";
+    return `${toggle}${auto}`;
   }
 
-  _switch(id, on, disabled = false) {
+  _switch(id, on, disabled = false, extra = "") {
     const busy = this._busy.has(id);
-    return `<button class="sw ${on ? "on" : ""} ${busy ? "busy" : ""}" role="switch" aria-checked="${on}"
+    return `<button class="sw ${on ? "on" : ""} ${busy ? "busy" : ""} ${extra}" role="switch" aria-checked="${on}"
       data-toggle="${esc(id)}" ${disabled || busy ? "disabled" : ""}></button>`;
   }
 
@@ -258,7 +278,9 @@ class TplinkEr6020Card extends HTMLElement {
     const status = `${on ? t.open : t.closed} ${last ? `${t.since} ${fmt(this._hass, last)}` : `· ${t.never}`}`;
     return `
       <div class="row">
-        <ha-icon class="${on ? "on" : ""}" icon="${on ? "mdi:lan-connect" : "mdi:lan-disconnect"}"></ha-icon>
+        <div class="icon ${on ? "on" : ""}">
+          <ha-icon icon="${on ? "mdi:lan-connect" : "mdi:lan-disconnect"}"></ha-icon>
+        </div>
         <div class="info">
           <div class="name">${esc(a.rule)}${a.controlled ? `<span class="badge">${t.controlled}</span>` : ""}</div>
           <div class="sub">${esc(a.external_port)} → ${esc(a.ipaddr)}:${esc(a.internal_port)} ${esc(a.protocol || "")}</div>

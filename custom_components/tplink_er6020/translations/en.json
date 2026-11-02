@@ -16,6 +16,7 @@
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
+          "scan_interval": "Polling interval",
           "active_from": "Active from",
           "active_to": "Active until",
           "notify_on_open": "Notify when ports are opened",
@@ -26,7 +27,8 @@
         "data_description": {
           "active_from": "Outside active hours the ports are always closed. Same time in both fields = always active.",
           "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
-          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save."
+          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save.",
+          "scan_interval": "How often the router is checked. Presence is detected with up to this delay."
         }
       },
       "reauth_confirm": {
@@ -55,6 +57,7 @@
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
+          "scan_interval": "Polling interval",
           "active_from": "Active from",
           "active_to": "Active until",
           "notify_on_open": "Notify when ports are opened",
@@ -65,7 +68,8 @@
         "data_description": {
           "active_from": "Outside active hours the ports are always closed. Same time in both fields = always active.",
           "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
-          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save."
+          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save.",
+          "scan_interval": "How often the router is checked. Presence is detected with up to this delay."
         }
       }
     },

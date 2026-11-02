@@ -150,8 +150,14 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         opts = self.coordinator.config_entry.options
+        c = self.coordinator
+        error = c.automation_error
+        if error is None and c.polling and not c.last_update_success:
+            error = f"Router not reachable: {c.last_exception}"
         return {
-            "automation": self.coordinator.automation_state,
+            "automation": c.automation_state,
+            "error": error,
+            "last_update": c.last_poll,
             "tracked_device": opts.get(CONF_TRACKED_MAC),
             "controlled_rules": opts.get(CONF_RULES, []),
             "away_delay": opts.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY),

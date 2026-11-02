@@ -1,11 +1,10 @@
 """Constants for the TP-Link ER6020 integration."""
-from datetime import timedelta
-
 DOMAIN = "tplink_er6020"
 
 CONF_TRACKED_MAC = "tracked_mac"
 CONF_RULES = "rules"
 CONF_AWAY_DELAY = "away_delay"
+CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ACTIVE_FROM = "active_from"
 CONF_ACTIVE_TO = "active_to"
 CONF_NOTIFY_ON_OPEN = "notify_on_open"
@@ -21,7 +20,7 @@ DEFAULT_AWAY_DELAY = 10  # minutes
 DEFAULT_ACTIVE_FROM = "07:00:00"
 DEFAULT_ACTIVE_TO = "23:00:00"
 
-SCAN_INTERVAL = timedelta(seconds=30)
+DEFAULT_SCAN_INTERVAL = 2  # minutes
 
 # Why a rule changed state (shown in the card's log).
 SOURCE_AWAY = "away"

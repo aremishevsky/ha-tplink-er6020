@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -14,7 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import ER6020AuthError, ER6020Client, ER6020Error
-from .const import DOMAIN, LOG_SIZE, SCAN_INTERVAL, SOURCE_ROUTER
+from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN, LOG_SIZE, SOURCE_ROUTER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,12 +86,15 @@ async def fetch_router_data(client: ER6020Client) -> RouterData:
 
 class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: ER6020Client) -> None:
+        self._interval = timedelta(
+            minutes=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=SCAN_INTERVAL,
+            update_interval=self._interval,
         )
         self.client = client
         self._store: Store[dict[str, Any]] = Store(
@@ -99,6 +103,7 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
         self._stored: dict[str, Any] = {}
         # Written by the controller, shown by the card.
         self.automation_state: str | None = None
+        self.automation_error: str | None = None
 
     async def async_load(self) -> None:
         self._stored = await self._store.async_load() or {}
@@ -121,10 +126,15 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
     def polling(self) -> bool:
         return self._stored.get("polling", True)
 
+    @property
+    def last_poll(self) -> str | None:
+        """Time of the last successful read from the router (ISO, UTC)."""
+        return self._stored.get("last_poll")
+
     async def async_set_polling(self, enabled: bool) -> None:
         self._stored["polling"] = enabled
         self._save()
-        self.update_interval = SCAN_INTERVAL if enabled else None
+        self.update_interval = self._interval if enabled else None
         if enabled:
             await self.async_refresh()
         elif self.data is not None:
@@ -145,6 +155,8 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
         except ER6020Error as err:
             raise UpdateFailed(str(err)) from err
 
+        # Persisted together with the next cache/log save, not on every poll.
+        self._stored["last_poll"] = dt_util.utcnow().isoformat()
         previous = self.data or (RouterData.from_cache(cache) if cache else None)
         if previous is not None:
             for name, rule in data.virtual_servers.items():

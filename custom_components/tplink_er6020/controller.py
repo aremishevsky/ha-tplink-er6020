@@ -37,6 +37,9 @@ from .notify import async_notify, notify_targets
 
 _LOGGER = logging.getLogger(__name__)
 
+RETRY_INTERVAL = timedelta(minutes=2)
+_KEEP = object()
+
 MESSAGES = {
     SOURCE_AWAY: "Ports opened (you left home): {}",
     SOURCE_HOME: "Ports closed (you're home): {}",
@@ -68,7 +71,10 @@ class PortController:
         # Last applied decision; None = nothing applied yet.
         self._applied: tuple[bool, str] | None = None
         self._failed: tuple[bool, str] | None = None
+        self._retry_at: datetime | None = None
         self._lock = asyncio.Lock()
+        # Set while we push our own status to listeners, so it doesn't re-trigger us.
+        self._publishing = False
 
     @callback
     def async_start(self) -> CALLBACK_TYPE:
@@ -76,6 +82,8 @@ class PortController:
 
     @callback
     def _handle_update(self) -> None:
+        if self._publishing or self._lock.locked():
+            return
         if self._mac and self._rules:
             self.entry.async_create_background_task(
                 self.hass, self._evaluate(), f"{DOMAIN}_evaluate"
@@ -102,31 +110,50 @@ class PortController:
             if not self.coordinator.polling or not self.coordinator.last_update_success:
                 self._set_state("paused" if not self.coordinator.polling else None)
                 return
-            decision = self._decide(dt_util.utcnow())
-            self._set_state(None if decision is None else decision[1])
+            now = dt_util.utcnow()
+            decision = self._decide(now)
+            failing = decision is not None and decision == self._failed
+            if not failing:
+                # Situation changed (e.g. back home): the old error no longer applies.
+                self._failed = self._retry_at = None
+            self._set_state(
+                "error" if failing else None if decision is None else decision[1],
+                _KEEP if failing else None,
+            )
             if decision is None or decision[0] == (self._applied or (None,))[0]:
+                return
+            if failing and self._retry_at and now < self._retry_at:
                 return
             try:
                 await self._apply(*decision)
             except ER6020Error as err:
                 action = "open" if decision[0] else "close"
-                _LOGGER.error("Failed to %s ports: %s", action, err)
-                self._set_state("error")
-                # Alert once per decision; it is retried on every poll.
+                message = f"Failed to {action} ports: {err}"
+                _LOGGER.error(message)
+                self._retry_at = now + RETRY_INTERVAL
+                self._set_state("error", message)
+                # Alert once per decision; it is retried every RETRY_INTERVAL.
                 if self._failed != decision:
                     self._failed = decision
-                    await async_notify(
-                        self.hass, notify_targets(self.entry.options), f"Failed to {action} ports: {err}"
-                    )
+                    await async_notify(self.hass, notify_targets(self.entry.options), message)
                 return
-            self._failed = None
+            self._failed = self._retry_at = None
             self._applied = decision
+            self._set_state(decision[1], None)
 
     @callback
-    def _set_state(self, state: str | None) -> None:
-        if self.coordinator.automation_state != state:
-            self.coordinator.automation_state = state
-            self.coordinator.async_update_listeners()
+    def _set_state(self, state: str | None, error: str | None | object = _KEEP) -> None:
+        """Publish automation state/error for the polling switch and the card."""
+        c = self.coordinator
+        new_error = c.automation_error if error is _KEEP else error
+        if c.automation_state == state and c.automation_error == new_error:
+            return
+        c.automation_state, c.automation_error = state, new_error
+        self._publishing = True
+        try:
+            c.async_update_listeners()
+        finally:
+            self._publishing = False
 
     async def _apply(self, enable: bool, source: str) -> None:
         rules = self.coordinator.data.virtual_servers

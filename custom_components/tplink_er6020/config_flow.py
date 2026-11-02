@@ -40,11 +40,13 @@ from .const import (
     CONF_NOTIFY_SERVICES,
     CONF_SEND_TEST,
     CONF_RULES,
+    CONF_SCAN_INTERVAL,
     CONF_TRACKED_MAC,
     DEFAULT_ACTIVE_FROM,
     DEFAULT_ACTIVE_TO,
     DEFAULT_AWAY_DELAY,
     DEFAULT_HOST,
+    DEFAULT_SCAN_INTERVAL,
     DEFAULT_USERNAME,
     DOMAIN,
 )
@@ -127,6 +129,13 @@ def settings_schema(
                 )
             ),
             vol.Required(
+                CONF_SCAN_INTERVAL, default=defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=60, step=1, unit_of_measurement="min", mode=NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required(
                 CONF_ACTIVE_FROM, default=defaults.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM)
             ): TimeSelector(),
             vol.Required(
@@ -148,6 +157,8 @@ def settings_schema(
 
 def _normalize(user_input: dict[str, Any]) -> dict[str, Any]:
     data = {**user_input, CONF_AWAY_DELAY: int(user_input[CONF_AWAY_DELAY])}
+    if CONF_SCAN_INTERVAL in data:
+        data[CONF_SCAN_INTERVAL] = int(data[CONF_SCAN_INTERVAL])
     data.pop(CONF_SEND_TEST, None)
     data.setdefault(CONF_NOTIFY_SERVICES, [])
     return data

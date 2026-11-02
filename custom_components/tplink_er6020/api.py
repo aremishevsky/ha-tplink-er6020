@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import ssl
 from typing import Any
 
@@ -101,7 +102,9 @@ class ER6020Client:
         self._password = password
         self._stok: str | None = None
 
-    async def _post(self, path: str, payload: dict[str, Any], stok: str = "") -> dict:
+    async def _post(
+        self, path: str, payload: dict[str, Any], stok: str = "", lenient: bool = False
+    ) -> dict:
         url = f"{self._base}/cgi-bin/luci/;stok={stok}{path}"
         headers = {
             "Referer": f"{self._base}/webpages/index.html",
@@ -126,8 +129,14 @@ class ER6020Client:
         try:
             return json.loads(text)
         except ValueError as err:
-            # Expired session usually yields an HTML page instead of JSON.
-            raise ER6020Error(f"Non-JSON response from {path}") from err
+            # Writes only need the status; accept a malformed body if it has one.
+            if lenient and (m := re.search(r'"error_code"\s*:\s*"?(-?\d+)', text)):
+                return {"error_code": m.group(1)}
+            plain = re.sub(r"<[^>]+>", " ", text)  # HTML error pages -> text
+            snippet = re.sub(r"\s+", " ", plain).strip()[:200] or "<empty>"
+            raise ER6020Error(
+                f"Non-JSON response from {path} (HTTP {resp.status}): {snippet}"
+            ) from err
 
     async def login(self) -> None:
         keys = await self._post(URL_LOGIN, {"method": "get"})
@@ -165,15 +174,19 @@ class ER6020Client:
             )
         self._stok = stok
 
-    async def _request(self, path: str, payload: dict[str, Any]) -> Any:
-        """Authenticated request; re-login once on failure."""
+    async def _request(self, path: str, payload: dict[str, Any], write: bool = False) -> Any:
+        """Authenticated request; re-login once on failure.
+
+        A write that got an unreadable response is not repeated: the router
+        may have applied it already.
+        """
         for attempt in (1, 2):
             if self._stok is None:
                 await self.login()
             try:
-                resp = await self._post(path, payload, self._stok or "")
+                resp = await self._post(path, payload, self._stok or "", lenient=write)
             except ER6020Error:
-                if attempt == 2:
+                if attempt == 2 or write:
                     raise
                 self._stok = None
                 continue
@@ -217,7 +230,8 @@ class ER6020Client:
         new = {f: rule.get(f) for f in VS_FIELDS} | {"enable": "on" if enabled else "off"}
         await self._request(
             URL_VIRTUAL_SERVERS,
-            {
+            write=True,
+            payload={
                 "method": "set",
                 "params": {
                     "index": index,

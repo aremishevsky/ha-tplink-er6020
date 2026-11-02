@@ -6,7 +6,7 @@ Custom integration for TL-ER6020 v2 (firmware 2.0.x). Opens selected port forwar
 
 ## How it works
 
-- Every 30 s the integration reads the router's ARP table.
+- Every **Polling interval** (default 2 min) the integration reads the router's ARP table.
 - When the tracked device (e.g. your phone) has been missing for **Away delay** minutes, the selected **Virtual Server** rules are enabled.
 - As soon as the device is back, they are disabled.
 - Outside **active hours** (default 07:00–23:00) the selected rules are always closed.
