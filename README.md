@@ -1,24 +1,20 @@
 # TP-Link TL-ER6020 for Home Assistant
 
-Custom integration for TL-ER6020 v2 (firmware 2.0.x). Talks to the router's local web API — no cloud, no open management ports.
+Custom integration for TL-ER6020 v2 (firmware 2.0.x). Opens selected port forwarding rules while you're away and closes them when you're back. Talks to the router's local web API — no cloud, no open management ports.
 
 > **Beta.** The API was reverse-engineered from the router's web UI of firmware 2.0.3 Build 20200623. Other firmware versions may behave differently — please open an issue with `scripts/probe.py` output if something doesn't work.
 
-## Features
+## How it works
 
-- `switch` per **Virtual Server** rule (Transmission → NAT → Virtual Servers) — enable/disable port forwarding.
-- `device_tracker` per LAN client (router ARP table + DHCP names), disabled by default — enable your phone.
-- Options: polling interval, `consider_home` grace period.
+- Every 30 s the integration reads the router's ARP table.
+- When the tracked device (e.g. your phone) has been missing for **Away delay** minutes, the selected **Virtual Server** rules are enabled.
+- As soon as the device is back, they are disabled.
+- Optional notifications on open/close — via a `notify` service (e.g. `mobile_app_iphone`) or in the HA UI.
 
-## Check API first (from a laptop in the LAN)
+Entities:
 
-```bash
-pip install aiohttp
-export ER6020_HOST=192.168.0.1 ER6020_USER=admin
-read -s ER6020_PASSWORD && export ER6020_PASSWORD
-python scripts/probe.py
-python scripts/probe.py toggle "RULE NAME" off
-```
+- `switch` per Virtual Server rule (Transmission → NAT → Virtual Servers) for manual control.
+- `device_tracker` for the tracked device — can be added to a `person`.
 
 ## Install
 
@@ -32,15 +28,26 @@ python scripts/probe.py toggle "RULE NAME" off
 
 Copy `custom_components/tplink_er6020` into `/config/custom_components/` and restart Home Assistant.
 
-### Setup
+## Setup
 
-**Settings → Devices & services → Add integration → TP-Link TL-ER6020**, then enter router IP, username and password.
+**Settings → Devices & services → Add integration → TP-Link TL-ER6020**
 
-## Automation
+1. Router IP, username, password.
+2. Device to track (★ = DHCP reservation, listed first), ports to control, away delay (default 10 min), notifications.
 
-See [examples/automations.yaml](examples/automations.yaml): `person` combining Companion app + router tracker → open ports after 10 min away, close on return.
+Change step 2 later via **Configure** on the integration page.
+
+## Check API from a laptop
+
+```bash
+pip install aiohttp
+export ER6020_HOST=192.168.0.1 ER6020_USER=admin
+read -s ER6020_PASSWORD && export ER6020_PASSWORD
+python scripts/probe.py
+python scripts/probe.py toggle "RULE NAME" off
+```
 
 ## Notes
 
-- The router allows a limited number of admin web sessions; polling may log you out of the web UI (and vice versa — the integration re-logins automatically). Increase the polling interval if that annoys you.
-- iPhone: disable *Private Wi-Fi Address* for the home network so the MAC stays stable.
+- iPhone: disable *Private Wi-Fi Address* for the home network so the MAC stays stable, and reserve its IP in the router.
+- The router allows a limited number of admin web sessions; polling may log you out of the web UI (and vice versa — the integration re-logins automatically).

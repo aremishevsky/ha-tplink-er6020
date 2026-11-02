@@ -9,6 +9,21 @@
           "password": "Password"
         }
       },
+      "settings": {
+        "title": "Port control",
+        "description": "Selected ports are opened when the device has been away for the given delay and closed as soon as it is back. ★ = device with a DHCP reservation.",
+        "data": {
+          "tracked_mac": "Device to track",
+          "rules": "Ports to control",
+          "away_delay": "Away delay",
+          "notify_on_open": "Notify when ports are opened",
+          "notify_on_close": "Notify when ports are closed",
+          "notify_service": "Notify service"
+        },
+        "data_description": {
+          "notify_service": "e.g. mobile_app_iphone. Leave empty for a notification in the Home Assistant UI."
+        }
+      },
       "reauth_confirm": {
         "title": "Re-authenticate TL-ER6020",
         "description": "Login failed. Note: the router locks logins after 10 failed attempts.",
@@ -29,11 +44,23 @@
   "options": {
     "step": {
       "init": {
+        "title": "Port control",
+        "description": "Selected ports are opened when the device has been away for the given delay and closed as soon as it is back. ★ = device with a DHCP reservation.",
         "data": {
-          "scan_interval": "Polling interval (seconds)",
-          "consider_home": "Seconds to wait before marking a device away"
+          "tracked_mac": "Device to track",
+          "rules": "Ports to control",
+          "away_delay": "Away delay",
+          "notify_on_open": "Notify when ports are opened",
+          "notify_on_close": "Notify when ports are closed",
+          "notify_service": "Notify service"
+        },
+        "data_description": {
+          "notify_service": "e.g. mobile_app_iphone. Leave empty for a notification in the Home Assistant UI."
         }
       }
+    },
+    "abort": {
+      "not_loaded": "The integration is not loaded (router unreachable?). Try again later."
     }
   }
 }

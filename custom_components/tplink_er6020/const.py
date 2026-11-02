@@ -3,11 +3,15 @@ from datetime import timedelta
 
 DOMAIN = "tplink_er6020"
 
-CONF_SCAN_INTERVAL = "scan_interval"
-CONF_CONSIDER_HOME = "consider_home"
+CONF_TRACKED_MAC = "tracked_mac"
+CONF_RULES = "rules"
+CONF_AWAY_DELAY = "away_delay"
+CONF_NOTIFY_ON_OPEN = "notify_on_open"
+CONF_NOTIFY_ON_CLOSE = "notify_on_close"
+CONF_NOTIFY_SERVICE = "notify_service"
 
+DEFAULT_HOST = "192.168.0.1"
 DEFAULT_USERNAME = "admin"
-DEFAULT_SCAN_INTERVAL = 60  # seconds
-DEFAULT_CONSIDER_HOME = 180  # seconds
+DEFAULT_AWAY_DELAY = 10  # minutes
 
-MIN_SCAN_INTERVAL = timedelta(seconds=15)
+SCAN_INTERVAL = timedelta(seconds=30)

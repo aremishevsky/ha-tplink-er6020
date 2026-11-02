@@ -34,6 +34,7 @@ _SSL_CONTEXT = _legacy_ssl_context()
 URL_LOGIN = "/login?form=login"
 URL_VIRTUAL_SERVERS = "/admin/nat?form=vs"
 URL_DHCP_CLIENTS = "/admin/dhcps?form=client"
+URL_DHCP_RESERVATIONS = "/admin/dhcps?form=reservation"
 URL_ARP_LIST = "/admin/arplist?form=getlist"
 
 VS_FIELDS = (
@@ -182,6 +183,9 @@ class ER6020Client:
 
     async def get_dhcp_clients(self) -> list[dict[str, Any]]:
         return await self._get_list(URL_DHCP_CLIENTS)
+
+    async def get_dhcp_reservations(self) -> list[dict[str, Any]]:
+        return await self._get_list(URL_DHCP_RESERVATIONS)
 
     async def get_arp_list(self) -> list[dict[str, Any]]:
         return await self._get_list(URL_ARP_LIST)

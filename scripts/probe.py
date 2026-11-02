@@ -35,6 +35,7 @@ async def main() -> None:
 
         for title, fetch in (
             ("virtual servers", client.get_virtual_servers),
+            ("dhcp reservations", client.get_dhcp_reservations),
             ("dhcp clients", client.get_dhcp_clients),
             ("arp list", client.get_arp_list),
         ):

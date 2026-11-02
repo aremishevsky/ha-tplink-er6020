@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -11,74 +10,77 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt as dt_util
 
 from .api import ER6020AuthError, ER6020Client, ER6020Error
-from .const import (
-    CONF_CONSIDER_HOME,
-    CONF_SCAN_INTERVAL,
-    DEFAULT_CONSIDER_HOME,
-    DEFAULT_SCAN_INTERVAL,
-    DOMAIN,
-    MIN_SCAN_INTERVAL,
-)
+from .const import DOMAIN, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
+class Client:
+    mac: str
+    ip: str | None = None
+    name: str | None = None
+    reserved: bool = False
+
+
+@dataclass
 class RouterData:
     virtual_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
-    # mac -> {"ip": ..., "name": ...}
-    clients: dict[str, dict[str, Any]] = field(default_factory=dict)
+    clients: dict[str, Client] = field(default_factory=dict)
+    # MACs currently in the router's ARP table
+    present: set[str] = field(default_factory=set)
+
+
+async def fetch_router_data(client: ER6020Client) -> RouterData:
+    """Fetch rules and merge reservations, DHCP leases and ARP into one client list."""
+    rules = await client.get_virtual_servers()
+    reservations = await client.get_dhcp_reservations()
+    leases = await client.get_dhcp_clients()
+    arp = await client.get_arp_list()
+
+    data = RouterData(virtual_servers={r["name"]: r for r in rules if r.get("name")})
+
+    def _client(raw_mac: str | None) -> Client | None:
+        if not raw_mac:
+            return None
+        mac = format_mac(raw_mac)
+        return data.clients.setdefault(mac, Client(mac))
+
+    for res in reservations:
+        if c := _client(res.get("mac")):
+            c.reserved = True
+            c.ip = res.get("ip") or c.ip
+            c.name = res.get("note") or c.name
+    for lease in leases:
+        if c := _client(lease.get("macaddr")):
+            c.ip = c.ip or lease.get("ipaddr")
+            c.name = c.name or lease.get("name") or None
+    for entry in arp:
+        if c := _client(entry.get("mac")):
+            c.ip = c.ip or entry.get("ipaddr")
+            data.present.add(c.mac)
+
+    return data
 
 
 class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: ER6020Client) -> None:
-        interval = timedelta(seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=max(interval, MIN_SCAN_INTERVAL),
+            update_interval=SCAN_INTERVAL,
         )
         self.client = client
-        self.consider_home = timedelta(
-            seconds=entry.options.get(CONF_CONSIDER_HOME, DEFAULT_CONSIDER_HOME)
-        )
-        self.last_seen: dict[str, datetime] = {}
 
     async def _async_update_data(self) -> RouterData:
         try:
-            rules = await self.client.get_virtual_servers()
-            dhcp = await self.client.get_dhcp_clients()
-            arp = await self.client.get_arp_list()
+            return await fetch_router_data(self.client)
         except ER6020AuthError as err:
             # Router locks login after ~10 failures: stop polling, ask to reauth.
             raise ConfigEntryAuthFailed(str(err)) from err
         except ER6020Error as err:
             raise UpdateFailed(str(err)) from err
-
-        data = RouterData(virtual_servers={r["name"]: r for r in rules if r.get("name")})
-
-        for lease in dhcp:
-            if mac := lease.get("macaddr"):
-                data.clients[format_mac(mac)] = {
-                    "ip": lease.get("ipaddr"),
-                    "name": lease.get("name") or None,
-                }
-
-        now = dt_util.utcnow()
-        for entry in arp:
-            if not (mac := entry.get("mac")):
-                continue
-            mac = format_mac(mac)
-            self.last_seen[mac] = now
-            data.clients.setdefault(mac, {"ip": entry.get("ipaddr"), "name": None})
-
-        return data
-
-    def is_home(self, mac: str) -> bool:
-        seen = self.last_seen.get(mac)
-        return seen is not None and dt_util.utcnow() - seen < self.consider_home
