@@ -2,6 +2,8 @@
 
 Custom integration for TL-ER6020 v2 (firmware 2.0.x). Talks to the router's local web API — no cloud, no open management ports.
 
+> **Beta.** The API was reverse-engineered from the router's web UI of firmware 2.0.3 Build 20200623. Other firmware versions may behave differently — please open an issue with `scripts/probe.py` output if something doesn't work.
+
 ## Features
 
 - `switch` per **Virtual Server** rule (Transmission → NAT → Virtual Servers) — enable/disable port forwarding.
@@ -18,23 +20,21 @@ python scripts/probe.py
 python scripts/probe.py toggle "RULE NAME" off
 ```
 
-## Install (HA OS, private repo)
+## Install
 
-HACS doesn't support private repos, so copy the folder manually.
+### HACS (recommended)
 
-Via **Terminal & SSH** add-on:
+1. HACS → ⋮ → **Custom repositories** → add `https://github.com/aremishevsky/ha-tplink-er6020`, type **Integration**.
+2. Find **TP-Link TL-ER6020** in HACS → **Download**.
+3. Restart Home Assistant.
 
-```bash
-cd /config
-git clone https://<github-token>@github.com/aremishevsky/ha-tplink-er6020.git /config/ha-tplink-er6020
-mkdir -p custom_components
-ln -sfn /config/ha-tplink-er6020/custom_components/tplink_er6020 custom_components/tplink_er6020
-ha core restart
-```
+### Manual
 
-Update later: `git -C /config/ha-tplink-er6020 pull && ha core restart`.
+Copy `custom_components/tplink_er6020` into `/config/custom_components/` and restart Home Assistant.
 
-Then **Settings → Devices & services → Add integration → TP-Link TL-ER6020**.
+### Setup
+
+**Settings → Devices & services → Add integration → TP-Link TL-ER6020**, then enter router IP, username and password.
 
 ## Automation
 
