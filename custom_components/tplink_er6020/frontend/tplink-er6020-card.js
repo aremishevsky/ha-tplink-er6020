@@ -74,6 +74,7 @@ const I18N = {
       hold_none: "Nothing",
       columns: "Buttons per row",
       ports: "Ports to show (order with arrows)",
+      port_name_hint: "Name (empty = router rule name). Renames the switch entity in Home Assistant.",
       none: "No ports found — is the integration set up?",
     },
   },
@@ -97,6 +98,9 @@ function fmt(hass, iso) {
     minute: "2-digit",
   });
 }
+
+/** Port name: the name given to the switch in Home Assistant, else the router rule name. */
+const portName = (state) => state?.attributes?.display_name || state?.attributes?.rule || "";
 
 /** Entities that belong to this integration. */
 function discover(hass) {
@@ -420,7 +424,7 @@ class TplinkEr6020Card extends HTMLElement {
       if (!s) continue;
       const on = s.state === "on";
       items.push(btn({
-        id, icon: on ? "mdi:lan-connect" : "mdi:lan-disconnect", name: s.attributes.rule,
+        id, icon: on ? "mdi:lan-connect" : "mdi:lan-disconnect", name: portName(s),
         state: on ? t.open : t.closed, cls: `port ${on ? "on" : ""}`,
         title: `${s.attributes.external_port} → ${s.attributes.ipaddr}:${s.attributes.internal_port}`,
       }));
@@ -499,7 +503,7 @@ class TplinkEr6020Card extends HTMLElement {
           <ha-icon icon="${on ? "mdi:lan-connect" : "mdi:lan-disconnect"}"></ha-icon>
         </div>
         <div class="info">
-          <div class="name">${esc(a.rule)}${a.controlled && this._autoOn ? `<span class="badge">${t.controlled}</span>` : ""}</div>
+          <div class="name">${esc(portName(s))}${a.controlled && this._autoOn ? `<span class="badge">${t.controlled}</span>` : ""}</div>
           <div class="sub">${esc(a.external_port)} → ${esc(a.ipaddr)}:${esc(a.internal_port)} ${esc(a.protocol || "")}</div>
           <div class="sub">${esc(status)}</div>
         </div>
@@ -530,7 +534,7 @@ class TplinkEr6020Card extends HTMLElement {
 
   _confirmDialog(t) {
     const s = this._hass.states[this._confirm];
-    const rule = s?.attributes?.rule || this._confirm;
+    const rule = portName(s) || this._confirm;
     const opening = s?.state !== "on";
     return `<div class="backdrop confirm" data-confirm="no"><div class="dialog small">
       <div class="header"><div class="title">${t.confirm_title}</div></div>
@@ -660,7 +664,6 @@ class TplinkEr6020CardEditor extends HTMLElement {
     const { selected, all } = this._ports();
     const { trackers } = discover(this._hass);
     const trackerOptions = [...new Set([...trackers, ...Object.keys(this._hass.states).filter((id) => id.startsWith("device_tracker.") || id.startsWith("person."))])];
-    const name = (id) => this._hass.states[id]?.attributes?.rule || this._hass.states[id]?.attributes?.friendly_name || id;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -670,6 +673,8 @@ class TplinkEr6020CardEditor extends HTMLElement {
         .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
         .port { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--divider-color); }
         .port span { flex: 1; }
+        .port input.pname { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--divider-color);
+          background: var(--card-background-color); color: var(--primary-text-color); }
         .port.off span { color: var(--secondary-text-color); }
         button { background: none; border: 1px solid var(--divider-color); border-radius: 6px; color: inherit;
           cursor: pointer; width: 32px; height: 28px; }
@@ -712,7 +717,8 @@ class TplinkEr6020CardEditor extends HTMLElement {
           const on = i >= 0;
           return `<div class="port ${on ? "" : "off"}">
             <input type="checkbox" data-port="${esc(id)}" ${on ? "checked" : ""}>
-            <span>${esc(name(id))}</span>
+            <input type="text" class="pname" data-rename="${esc(id)}" value="${esc(this._hass.states[id]?.attributes?.display_name !== this._hass.states[id]?.attributes?.rule ? this._hass.states[id]?.attributes?.display_name || "" : "")}"
+              placeholder="${esc(this._hass.states[id]?.attributes?.rule || id)}" title="${esc(t.editor.port_name_hint)}">
             <button data-move="-1" data-id="${esc(id)}" ${!on || i === 0 ? "disabled" : ""}>↑</button>
             <button data-move="1" data-id="${esc(id)}" ${!on || i === selected.length - 1 ? "disabled" : ""}>↓</button>
           </div>`;
@@ -727,6 +733,13 @@ class TplinkEr6020CardEditor extends HTMLElement {
 
   _onChange(ev) {
     const el = ev.target;
+    if (el.dataset.rename) {
+      // Global rename: entity registry name, used by the card, details and notifications.
+      this._hass
+        .callWS({ type: "config/entity_registry/update", entity_id: el.dataset.rename, name: el.value.trim() || null })
+        .catch((err) => alert(err.message || err));
+      return;
+    }
     if (el.dataset.port) {
       const { selected } = this._ports();
       this._config.entities = el.checked ? [...selected, el.dataset.port] : selected.filter((id) => id !== el.dataset.port);

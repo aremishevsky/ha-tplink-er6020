@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -198,6 +199,18 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
         )
         del events[:-LOG_SIZE]
         self._save()
+
+    def display_name(self, rule: str) -> str:
+        """Name the user gave the rule's switch in Home Assistant, else the router name."""
+        ent_reg = er.async_get(self.hass)
+        entity_id = ent_reg.async_get_entity_id(
+            "switch", DOMAIN, f"{self.config_entry.entry_id}_vs_{rule}"
+        )
+        entry = ent_reg.async_get(entity_id) if entity_id else None
+        return (entry and entry.name) or rule
+
+    def display_names(self, rules: list[str]) -> str:
+        return ", ".join(self.display_name(r) for r in rules)
 
     def rule_log(self, name: str) -> list[dict[str, str]]:
         return self._stored["log"].get(name, [])

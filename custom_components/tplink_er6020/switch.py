@@ -102,6 +102,7 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
         }
         return {
             "rule": self._rule_name,
+            "display_name": self.coordinator.display_name(self._rule_name),
             **{
                 k: rule.get(k)
                 for k in ("interface", "external_port", "internal_port", "ipaddr", "protocol")
@@ -136,10 +137,9 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
         if notifications_enabled(opts) and opts.get(
             CONF_NOTIFY_ON_OPEN if enabled else CONF_NOTIFY_ON_CLOSE, True
         ):
+            name = c.display_name(self._rule_name)
             message = (
-                f"🚨 Port opened manually: {self._rule_name}"
-                if enabled
-                else f"✅ Port closed manually: {self._rule_name}"
+                f"🚨 Port opened manually: {name}" if enabled else f"✅ Port closed manually: {name}"
             )
             if pause:
                 message += " — automation turned off"

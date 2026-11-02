@@ -183,5 +183,7 @@ class PortController:
             CONF_NOTIFY_ON_OPEN if enable else CONF_NOTIFY_ON_CLOSE, True
         ):
             await async_notify(
-                self.hass, notify_targets(opts), MESSAGES[source].format(", ".join(changed))
+                self.hass,
+                notify_targets(opts),
+                MESSAGES[source].format(self.coordinator.display_names(changed)),
             )
