@@ -21,6 +21,11 @@ const I18N = {
     details: "Ports",
     no_events: "No events yet",
     hint: "Tap for details",
+    confirm_title: "Turn off automation?",
+    confirm_text: "{port} is controlled by the automation, which would change it back. A manual change turns the automation off — turn it on again later from this card.",
+    confirm_open: "Open port & turn off automation",
+    confirm_close: "Close port & turn off automation",
+    cancel: "Cancel",
     on: "On",
     off: "Off",
     controlled: "automated",
@@ -155,6 +160,13 @@ const STYLE = `
             box-shadow: 0 8px 32px rgba(0,0,0,.3); }
   .dialog .header { position: sticky; top: 0; background: inherit; z-index: 1;
                     border-bottom: 1px solid var(--divider-color); padding-bottom: 12px; }
+  .backdrop.confirm { z-index: 1001; }
+  .dialog.small { width: min(420px, calc(100vw - 32px)); }
+  .ctext { padding: 8px 16px 0; color: var(--secondary-text-color); line-height: 1.4; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; flex-wrap: wrap; }
+  .actions button { border: none; border-radius: 18px; padding: 8px 16px; cursor: pointer; font: inherit; font-weight: 500; }
+  .btn-text { background: none; color: var(--primary-color); }
+  .btn-primary { background: var(--primary-color); color: var(--text-primary-color, #fff); }
   .close { background: none; border: none; color: inherit; cursor: pointer; padding: 4px; }
   .port { border-bottom: 1px solid var(--divider-color); padding-bottom: 8px; }
   .port:last-child { border-bottom: none; }
@@ -174,7 +186,11 @@ class TplinkEr6020Card extends HTMLElement {
     this._busy = new Set();
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this._onKey = (ev) => {
-      if (ev.key === "Escape" && this._open) this._setOpen(false);
+      if (ev.key !== "Escape") return;
+      if (this._confirm) {
+        this._confirm = null;
+        this._render();
+      } else if (this._open) this._setOpen(false);
     };
   }
 
@@ -236,6 +252,7 @@ class TplinkEr6020Card extends HTMLElement {
     const ids = [...e.all, e.polling, e.automation, e.presence].filter(Boolean);
     const sig = JSON.stringify([
       this._open,
+      this._confirm,
       [...this._busy],
       ids.map((id) => this._hass.states[id]?.last_updated),
       this._config,
@@ -256,6 +273,7 @@ class TplinkEr6020Card extends HTMLElement {
       <style>${STYLE}</style>
       <ha-card class="${this._config.background ? "" : "transparent"} ${buttons ? "buttons" : ""}">${body}</ha-card>
       ${this._open ? this._dialog(t, e) : ""}
+      ${this._confirm ? this._confirmDialog(t) : ""}
     `;
   }
 
@@ -423,6 +441,19 @@ class TplinkEr6020Card extends HTMLElement {
     return `<div class="backdrop" data-backdrop><div class="dialog">${this._header(t, e, true)}${schedule}${ports}</div></div>`;
   }
 
+  _confirmDialog(t) {
+    const s = this._hass.states[this._confirm];
+    const rule = s?.attributes?.rule || this._confirm;
+    const opening = s?.state !== "on";
+    return `<div class="backdrop confirm" data-confirm="no"><div class="dialog small">
+      <div class="header"><div class="title">${t.confirm_title}</div></div>
+      <div class="ctext">${esc(t.confirm_text.replace("{port}", rule))}</div>
+      <div class="actions">
+        <button class="btn-text" data-confirm="no">${t.cancel}</button>
+        <button class="btn-primary" data-confirm="yes">${opening ? t.confirm_open : t.confirm_close}</button>
+      </div></div></div>`;
+  }
+
   _setOpen(open) {
     this._open = open;
     this._render();
@@ -430,10 +461,42 @@ class TplinkEr6020Card extends HTMLElement {
 
   async _onClick(ev) {
     const path = ev.composedPath();
+    // Buttons answer; a click on the backdrop itself cancels, clicks inside the dialog don't.
+    const answer = path.find((el) => el.dataset?.confirm && (el.tagName === "BUTTON" || el === path[0]));
+    if (!answer && this._confirm) return;
+    if (answer) {
+      ev.stopPropagation();
+      const id = this._confirm;
+      this._confirm = null;
+      this._render();
+      if (answer.dataset.confirm === "yes") await this._toggle(id);
+      return;
+    }
     const toggle = path.find((el) => el.dataset?.toggle);
     if (toggle) {
       ev.stopPropagation();
       const id = toggle.dataset.toggle;
+      const a = this._hass.states[id]?.attributes || {};
+      if (a.controlled && this._autoOn) {
+        // Manual change of an automated port pauses the automation: ask first.
+        this._confirm = id;
+        this._render();
+        return;
+      }
+      await this._toggle(id);
+      return;
+    }
+    if (path.find((el) => el.dataset && "close" in el.dataset)) return this._setOpen(false);
+    if (path[0]?.dataset && "backdrop" in path[0].dataset) return this._setOpen(false);
+    if (this._open) return;
+    if (this._config.layout === "buttons") {
+      if (path.find((el) => el.dataset && "open" in el.dataset)) this._setOpen(true);
+    } else if (path.find((el) => el.tagName === "HA-CARD")) this._setOpen(true);
+  }
+
+  async _toggle(id) {
+    if (!id) return;
+    {
       const on = this._hass.states[id]?.state === "on";
       this._busy.add(id);
       this._render();
@@ -447,14 +510,7 @@ class TplinkEr6020Card extends HTMLElement {
         this._busy.delete(id);
         this._render();
       }
-      return;
     }
-    if (path.find((el) => el.dataset && "close" in el.dataset)) return this._setOpen(false);
-    if (path[0]?.dataset && "backdrop" in path[0].dataset) return this._setOpen(false);
-    if (this._open) return;
-    if (this._config.layout === "buttons") {
-      if (path.find((el) => el.dataset && "open" in el.dataset)) this._setOpen(true);
-    } else if (path.find((el) => el.tagName === "HA-CARD")) this._setOpen(true);
   }
 }
 

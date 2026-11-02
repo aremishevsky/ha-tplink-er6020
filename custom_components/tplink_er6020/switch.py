@@ -118,12 +118,20 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
         await self._set(False)
 
     async def _set(self, enabled: bool) -> None:
+        c = self.coordinator
+        opts = c.config_entry.options
+        # A manual change of an automated port would be reverted by the
+        # automation on the next poll, so the manual change wins: pause it.
+        pause = c.automation_enabled and self._rule_name in opts.get(CONF_RULES, [])
+        if pause:
+            c.async_set_automation(False)
         try:
-            await self.coordinator.async_set_rule(self._rule_name, enabled, SOURCE_MANUAL)
+            await c.async_set_rule(self._rule_name, enabled, SOURCE_MANUAL)
         except ER6020Error as err:
+            if pause:
+                c.async_set_automation(True)
             raise HomeAssistantError(str(err)) from err
 
-        opts = self.coordinator.config_entry.options
         if notifications_enabled(opts) and opts.get(
             CONF_NOTIFY_ON_OPEN if enabled else CONF_NOTIFY_ON_CLOSE, True
         ):
@@ -132,6 +140,8 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
                 if enabled
                 else f"✅ Port closed manually: {self._rule_name}"
             )
+            if pause:
+                message += " — automation turned off"
             await async_notify(self.hass, notify_targets(opts), message)
 
 
