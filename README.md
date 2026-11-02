@@ -38,6 +38,7 @@ show_title: true      # false = no header
 background: true      # false = transparent card
 layout: list          # or: buttons
 columns: 4            # buttons per row (layout: buttons)
+hold_action: details   # long press on a button: details | more-info | none
 entities:
   - switch.tl_er6020_port_forward_ssh
   - switch.tl_er6020_port_forward_plex

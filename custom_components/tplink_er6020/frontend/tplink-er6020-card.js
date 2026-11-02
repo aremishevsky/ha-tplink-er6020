@@ -56,6 +56,10 @@ const I18N = {
       layout: "Layout",
       layout_list: "List",
       layout_buttons: "Buttons (grid)",
+      hold_action: "Long press on a button",
+      hold_details: "Details (scroll to the port)",
+      hold_more_info: "Home Assistant more-info",
+      hold_none: "Nothing",
       columns: "Buttons per row",
       ports: "Ports to show (order with arrows)",
       none: "No ports found — is the integration set up?",
@@ -102,6 +106,8 @@ const STYLE = `
   ha-card.buttons { cursor: default; }
   .grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 8px; padding: 8px; }
   ha-card.transparent .grid { padding: 0; }
+  .btn { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+  .port.focus { background: rgba(var(--rgb-primary-color, 3, 169, 244), .08); }
   .btn { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
          gap: 2px; padding: 6px; box-sizing: border-box; cursor: pointer; text-align: center;
          border-radius: var(--ha-card-border-radius, 12px);
@@ -185,6 +191,20 @@ class TplinkEr6020Card extends HTMLElement {
     this._open = false;
     this._busy = new Set();
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
+    // Long press (hold_action) on buttons: works for mouse and touch.
+    this.shadowRoot.addEventListener("pointerdown", (ev) => this._holdStart(ev));
+    for (const type of ["pointerup", "pointercancel"]) {
+      this.shadowRoot.addEventListener(type, () => clearTimeout(this._holdTimer));
+    }
+    this.shadowRoot.addEventListener("pointermove", (ev) => {
+      // Scrolling or dragging cancels the hold.
+      if (this._holdAt && Math.hypot(ev.clientX - this._holdAt[0], ev.clientY - this._holdAt[1]) > 10) {
+        clearTimeout(this._holdTimer);
+      }
+    });
+    this.shadowRoot.addEventListener("contextmenu", (ev) => {
+      if (ev.composedPath().find((el) => el.dataset?.hold)) ev.preventDefault();
+    });
     this._onKey = (ev) => {
       if (ev.key !== "Escape") return;
       if (this._confirm) {
@@ -207,7 +227,7 @@ class TplinkEr6020Card extends HTMLElement {
   setConfig(config) {
     this._config = {
       show_polling: true, show_automation: true, show_title: true, background: true,
-      layout: "list", columns: 4, ...config,
+      layout: "list", columns: 4, hold_action: "details", ...config,
     };
     this._sig = null;
     this._render();
@@ -340,10 +360,10 @@ class TplinkEr6020Card extends HTMLElement {
     const st = (id) => id && this._hass.states[id];
     const pol = st(e.polling);
     const a = pol?.attributes || {};
-    const btn = ({ id, open, icon, name, state, cls = "", title = "" }) => {
+    const btn = ({ id, open, hold, icon, name, state, cls = "", title = "" }) => {
       const busy = id && this._busy.has(id);
       const action = id ? `data-toggle="${esc(id)}"` : open ? "data-open" : "";
-      return `<div class="btn ${cls} ${busy ? "busy" : ""}" ${action} title="${esc(title)}">
+      return `<div class="btn ${cls} ${busy ? "busy" : ""}" ${action} data-hold="${esc(hold || id || "")}" title="${esc(title)}">
         <ha-icon icon="${icon}"></ha-icon><div class="bname">${esc(name)}</div><div class="bstate">${esc(state)}</div></div>`;
     };
     const items = [];
@@ -351,7 +371,7 @@ class TplinkEr6020Card extends HTMLElement {
     if (p) {
       const home = p.state === "home", away = p.state === "not_home";
       items.push(btn({
-        open: true, icon: home ? "mdi:home" : away ? "mdi:home-export-outline" : "mdi:help",
+        open: true, hold: e.presence, icon: home ? "mdi:home" : away ? "mdi:home-export-outline" : "mdi:help",
         name: home ? t.home : away ? t.away : t.unknown, state: fmt(this._hass, p.last_changed),
         cls: home ? "home" : away ? "away" : "",
       }));
@@ -434,7 +454,7 @@ class TplinkEr6020Card extends HTMLElement {
               )
               .join("")}</ul>`
           : `<div class="empty">${t.no_events}</div>`;
-        return `<div class="port">${this._row(t, id)}${items}</div>`;
+        return `<div class="port ${id === this._focus ? "focus" : ""}" data-port="${esc(id)}">${this._row(t, id)}${items}</div>`;
       })
       .join("");
     const schedule = `<div class="auto schedule"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(this._schedule(t, e))}</div>`;
@@ -454,12 +474,40 @@ class TplinkEr6020Card extends HTMLElement {
       </div></div></div>`;
   }
 
-  _setOpen(open) {
+  _setOpen(open, focus = null) {
     this._open = open;
+    this._focus = open ? focus : null;
     this._render();
+    if (open && focus) {
+      this.shadowRoot.querySelector(`.port[data-port="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
+    }
+  }
+
+  _holdStart(ev) {
+    this._held = false;
+    this._holdAt = [ev.clientX, ev.clientY];
+    const el = ev.composedPath().find((n) => n.dataset?.hold !== undefined);
+    const action = this._config.hold_action || "details";
+    if (!el || action === "none" || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+    clearTimeout(this._holdTimer);
+    this._holdTimer = setTimeout(() => {
+      this._held = true; // swallow the click that follows the release
+      const id = el.dataset.hold;
+      if (action === "more-info" && id) {
+        this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: id }, bubbles: true, composed: true }));
+      } else {
+        const isPort = id && this._hass.states[id]?.attributes?.rule !== undefined;
+        this._setOpen(true, isPort ? id : null);
+      }
+    }, 500);
   }
 
   async _onClick(ev) {
+    if (this._held) {
+      this._held = false;
+      ev.stopPropagation();
+      return;
+    }
     const path = ev.composedPath();
     // Buttons answer; a click on the backdrop itself cancels, clicks inside the dialog don't.
     const answer = path.find((el) => el.dataset?.confirm && (el.tagName === "BUTTON" || el === path[0]));
@@ -582,7 +630,13 @@ class TplinkEr6020CardEditor extends HTMLElement {
         <option value="buttons" ${this._config.layout === "buttons" ? "selected" : ""}>${t.editor.layout_buttons}</option>
       </select>
       ${this._config.layout === "buttons" ? `<label>${t.editor.columns}</label>
-        <input type="text" inputmode="numeric" data-field="columns" value="${esc(this._config.columns ?? 4)}">` : ""}
+        <input type="text" inputmode="numeric" data-field="columns" value="${esc(this._config.columns ?? 4)}">
+        <label>${t.editor.hold_action}</label>
+        <select data-field="hold_action">
+          ${[["details", t.editor.hold_details], ["more-info", t.editor.hold_more_info], ["none", t.editor.hold_none]]
+            .map(([v, l]) => `<option value="${v}" ${(this._config.hold_action || "details") === v ? "selected" : ""}>${l}</option>`)
+            .join("")}
+        </select>` : ""}
       <label>${t.editor.ports}</label>
       ${all.length ? "" : `<div>${t.editor.none}</div>`}
       ${all
