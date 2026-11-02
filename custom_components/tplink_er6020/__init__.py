@@ -1,22 +1,43 @@
-"""TP-Link TL-ER6020 integration: virtual server switches + presence."""
+"""TP-Link ER6020 AutoPortOnOff: open port forwarding while you're away."""
 from __future__ import annotations
+
+from pathlib import Path
 
 from aiohttp import CookieJar
 
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 
 from .api import ER6020Client
-from .const import CONF_TRACKED_MAC, DOMAIN
+from .const import CARD_URL, CONF_TRACKED_MAC, DOMAIN
 from .controller import PortController
 from .coordinator import ER6020Coordinator
 
 PLATFORMS = [Platform.SWITCH, Platform.DEVICE_TRACKER]
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 type ER6020ConfigEntry = ConfigEntry[ER6020Coordinator]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the Lovelace card and load it on every dashboard."""
+    card = Path(__file__).parent / "frontend" / "tplink-er6020-card.js"
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(card), False)])
+    version = (await async_get_integration(hass, DOMAIN)).version
+    add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ER6020ConfigEntry) -> bool:
@@ -29,6 +50,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ER6020ConfigEntry) -> bo
         entry.data[CONF_PASSWORD],
     )
     coordinator = ER6020Coordinator(hass, entry, client)
+    await coordinator.async_load()
+    # With polling off this uses cached data and makes no requests.
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 

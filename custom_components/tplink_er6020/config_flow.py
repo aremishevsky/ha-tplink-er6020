@@ -27,16 +27,21 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TimeSelector,
 )
 
 from .api import ER6020AuthError, ER6020Client, ER6020Error
 from .const import (
+    CONF_ACTIVE_FROM,
+    CONF_ACTIVE_TO,
     CONF_AWAY_DELAY,
     CONF_NOTIFY_ON_CLOSE,
     CONF_NOTIFY_ON_OPEN,
     CONF_NOTIFY_SERVICE,
     CONF_RULES,
     CONF_TRACKED_MAC,
+    DEFAULT_ACTIVE_FROM,
+    DEFAULT_ACTIVE_TO,
     DEFAULT_AWAY_DELAY,
     DEFAULT_HOST,
     DEFAULT_USERNAME,
@@ -118,6 +123,12 @@ def settings_schema(
                 )
             ),
             vol.Required(
+                CONF_ACTIVE_FROM, default=defaults.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM)
+            ): TimeSelector(),
+            vol.Required(
+                CONF_ACTIVE_TO, default=defaults.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO)
+            ): TimeSelector(),
+            vol.Required(
                 CONF_NOTIFY_ON_OPEN, default=defaults.get(CONF_NOTIFY_ON_OPEN, True)
             ): BooleanSelector(),
             vol.Required(
@@ -168,7 +179,7 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._router is not None
         if user_input is not None:
             return self.async_create_entry(
-                title=f"TL-ER6020 ({self._credentials[CONF_HOST]})",
+                title=f"AutoPortOnOff ({self._credentials[CONF_HOST]})",
                 data=self._credentials,
                 options=_normalize(user_input),
             )

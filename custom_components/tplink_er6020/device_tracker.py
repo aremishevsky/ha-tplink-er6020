@@ -42,8 +42,13 @@ class ClientTracker(CoordinatorEntity[ER6020Coordinator], ScannerEntity):
         return (client and client.name) or self._mac
 
     @property
+    def available(self) -> bool:
+        # Presence is unknown while polling is off.
+        return super().available and self.coordinator.data.present is not None
+
+    @property
     def is_connected(self) -> bool:
-        return self._mac in self.coordinator.data.present
+        return self._mac in (self.coordinator.data.present or ())
 
     @property
     def mac_address(self) -> str:

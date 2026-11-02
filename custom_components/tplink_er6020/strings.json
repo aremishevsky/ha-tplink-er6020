@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "TP-Link TL-ER6020",
+        "title": "TP-Link ER6020 AutoPortOnOff",
         "data": {
           "host": "Host",
           "username": "Username",
@@ -16,12 +16,15 @@
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
+          "active_from": "Active from",
+          "active_to": "Active until",
           "notify_on_open": "Notify when ports are opened",
           "notify_on_close": "Notify when ports are closed",
           "notify_service": "Notify service"
         },
         "data_description": {
-          "notify_service": "e.g. mobile_app_iphone. Leave empty for a notification in the Home Assistant UI."
+          "notify_service": "e.g. mobile_app_iphone. Leave empty for a notification in the Home Assistant UI.",
+          "active_from": "Outside active hours the ports are always closed. Same time in both fields = always active."
         }
       },
       "reauth_confirm": {
@@ -50,12 +53,15 @@
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
+          "active_from": "Active from",
+          "active_to": "Active until",
           "notify_on_open": "Notify when ports are opened",
           "notify_on_close": "Notify when ports are closed",
           "notify_service": "Notify service"
         },
         "data_description": {
-          "notify_service": "e.g. mobile_app_iphone. Leave empty for a notification in the Home Assistant UI."
+          "notify_service": "e.g. mobile_app_iphone. Leave empty for a notification in the Home Assistant UI.",
+          "active_from": "Outside active hours the ports are always closed. Same time in both fields = always active."
         }
       }
     },

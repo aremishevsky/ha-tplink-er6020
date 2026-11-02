@@ -1,5 +1,5 @@
 {
-  "name": "TP-Link TL-ER6020",
+  "name": "TP-Link ER6020 AutoPortOnOff",
   "homeassistant": "2024.12.0",
   "render_readme": true
 }

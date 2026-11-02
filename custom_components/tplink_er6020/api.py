@@ -37,6 +37,8 @@ URL_DHCP_CLIENTS = "/admin/dhcps?form=client"
 URL_DHCP_RESERVATIONS = "/admin/dhcps?form=reservation"
 URL_ARP_LIST = "/admin/arplist?form=getlist"
 
+ERR_LOGIN_CONFLICT = "710"
+
 VS_FIELDS = (
     "name",
     "interface",
@@ -143,7 +145,15 @@ class ER6020Client:
         )
         result = resp.get("result") or {}
         stok = result.get("stok")
-        if str(resp.get("error_code")) != "0" or not stok:
+        code = str(resp.get("error_code"))
+        if code == ERR_LOGIN_CONFLICT:
+            # Router allows a single admin session: someone else is logged in.
+            self._stok = None
+            raise ER6020Error(
+                f"Another admin session is active ({resp.get('logined_user') or result.get('logined_user')} "
+                f"from {resp.get('logined_ip') or result.get('logined_ip')})"
+            )
+        if code != "0" or not stok:
             # 700 = bad credentials; result carries failureCount/attemptsAllowed.
             self._stok = None
             raise ER6020AuthError(

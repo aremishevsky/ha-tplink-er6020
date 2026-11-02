@@ -1,12 +1,14 @@
 """Open selected port forwarding rules while the tracked device is away.
 
-Away  = tracked MAC missing from the router's ARP table for `away_delay` minutes.
-Home  = tracked MAC seen again (ports are closed immediately).
+Away     = tracked MAC missing from the router's ARP table for `away_delay` minutes.
+Home     = tracked MAC seen again (ports are closed immediately).
+Schedule = outside active hours the ports are always closed.
+Nothing happens while router polling is off.
 """
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 import logging
 
 from homeassistant.components import persistent_notification
@@ -17,18 +19,40 @@ from homeassistant.util import dt as dt_util
 
 from .api import ER6020Error
 from .const import (
+    CONF_ACTIVE_FROM,
+    CONF_ACTIVE_TO,
     CONF_AWAY_DELAY,
     CONF_NOTIFY_ON_CLOSE,
     CONF_NOTIFY_ON_OPEN,
     CONF_NOTIFY_SERVICE,
     CONF_RULES,
     CONF_TRACKED_MAC,
+    DEFAULT_ACTIVE_FROM,
+    DEFAULT_ACTIVE_TO,
     DEFAULT_AWAY_DELAY,
     DOMAIN,
+    SOURCE_AWAY,
+    SOURCE_HOME,
+    SOURCE_SCHEDULE,
 )
 from .coordinator import ER6020Coordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+MESSAGES = {
+    SOURCE_AWAY: "Ports opened (you left home): {}",
+    SOURCE_HOME: "Ports closed (you're home): {}",
+    SOURCE_SCHEDULE: "Ports closed (outside active hours): {}",
+}
+
+
+def in_window(now: time, start: time, end: time) -> bool:
+    """start == end means always active; the window may cross midnight."""
+    if start == end:
+        return True
+    if start < end:
+        return start <= now < end
+    return now >= start or now < end
 
 
 class PortController:
@@ -40,10 +64,11 @@ class PortController:
         self._mac: str | None = opts.get(CONF_TRACKED_MAC)
         self._rules: list[str] = opts.get(CONF_RULES, [])
         self._delay = timedelta(minutes=opts.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY))
+        self._start = time.fromisoformat(opts.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM))
+        self._end = time.fromisoformat(opts.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO))
         self._last_seen = dt_util.utcnow()
-        # None = unknown (e.g. right after HA restart while the device is absent):
-        # don't touch the rules until we either see the device or the delay passes.
-        self._away: bool | None = None
+        # Last applied decision; None = nothing applied yet.
+        self._applied: tuple[bool, str] | None = None
         self._lock = asyncio.Lock()
 
     @callback
@@ -52,30 +77,50 @@ class PortController:
 
     @callback
     def _handle_update(self) -> None:
-        if self._mac and self._rules and self.coordinator.last_update_success:
+        if self._mac and self._rules:
             self.entry.async_create_background_task(
                 self.hass, self._evaluate(), f"{DOMAIN}_evaluate"
             )
 
+    def _decide(self, now: datetime) -> tuple[bool, str] | None:
+        """Return (open?, reason) or None when the state is unknown."""
+        data = self.coordinator.data
+        if not in_window(dt_util.as_local(now).time(), self._start, self._end):
+            return False, SOURCE_SCHEDULE
+        if data.present is None:
+            return None
+        if self._mac in data.present:
+            self._last_seen = now
+            return False, SOURCE_HOME
+        if now - self._last_seen >= self._delay:
+            return True, SOURCE_AWAY
+        # Absent but within the delay: keep whatever was decided before.
+        # Right after a restart nothing was decided yet, so don't touch the rules.
+        return (self._applied[0], "leaving") if self._applied else None
+
     async def _evaluate(self) -> None:
         async with self._lock:
-            now = dt_util.utcnow()
-            present = self._mac in self.coordinator.data.present
-            if present:
-                self._last_seen = now
-            away = now - self._last_seen >= self._delay
-            if not present and not away and self._away is None:
+            if not self.coordinator.polling or not self.coordinator.last_update_success:
+                self._set_state("paused" if not self.coordinator.polling else None)
                 return
-            if away == self._away:
+            decision = self._decide(dt_util.utcnow())
+            self._set_state(None if decision is None else decision[1])
+            if decision is None or decision[0] == (self._applied or (None,))[0]:
                 return
-            self._away = away
             try:
-                await self._apply(enable=away)
+                await self._apply(*decision)
             except ER6020Error as err:
-                _LOGGER.error("Failed to %s ports: %s", "open" if away else "close", err)
-                self._away = None  # retry on next poll
+                _LOGGER.error("Failed to %s ports: %s", "open" if decision[0] else "close", err)
+                return  # retry on next poll
+            self._applied = decision
 
-    async def _apply(self, enable: bool) -> None:
+    @callback
+    def _set_state(self, state: str | None) -> None:
+        if self.coordinator.automation_state != state:
+            self.coordinator.automation_state = state
+            self.coordinator.async_update_listeners()
+
+    async def _apply(self, enable: bool, source: str) -> None:
         rules = self.coordinator.data.virtual_servers
         changed: list[str] = []
         for name in self._rules:
@@ -84,22 +129,18 @@ class PortController:
                 _LOGGER.warning("Virtual server rule '%s' no longer exists", name)
                 continue
             if (rule.get("enable") == "on") != enable:
-                await self.coordinator.client.set_virtual_server_enabled(name, enable)
+                await self.coordinator.async_set_rule(name, enable, source)
                 changed.append(name)
 
         if not changed:
             return
-        _LOGGER.info("%s ports: %s", "Opened" if enable else "Closed", ", ".join(changed))
-        await self.coordinator.async_request_refresh()
-
+        _LOGGER.info("%s ports (%s): %s", "Opened" if enable else "Closed", source, ", ".join(changed))
         opts = self.entry.options
-        if enable and opts.get(CONF_NOTIFY_ON_OPEN, True):
-            await self._notify(f"Ports opened (you left home): {', '.join(changed)}")
-        elif not enable and opts.get(CONF_NOTIFY_ON_CLOSE, True):
-            await self._notify(f"Ports closed (you're home): {', '.join(changed)}")
+        if opts.get(CONF_NOTIFY_ON_OPEN if enable else CONF_NOTIFY_ON_CLOSE, True):
+            await self._notify(MESSAGES[source].format(", ".join(changed)))
 
     async def _notify(self, message: str) -> None:
-        title = "TL-ER6020"
+        title = "AutoPortOnOff"
         if service := self.entry.options.get(CONF_NOTIFY_SERVICE):
             try:
                 await self.hass.services.async_call(
