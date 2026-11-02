@@ -17,6 +17,8 @@ from .const import (
     CONF_ACTIVE_FROM,
     CONF_ACTIVE_TO,
     CONF_AWAY_DELAY,
+    CONF_NOTIFY_ON_CLOSE,
+    CONF_NOTIFY_ON_OPEN,
     CONF_RULES,
     CONF_SCHEDULE_ENABLED,
     CONF_TRACKED_MAC,
@@ -27,6 +29,7 @@ from .const import (
     SOURCE_MANUAL,
 )
 from .coordinator import ER6020Coordinator
+from .notify import async_notify, notifications_enabled, notify_targets
 
 
 async def async_setup_entry(
@@ -119,6 +122,17 @@ class VirtualServerSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
             await self.coordinator.async_set_rule(self._rule_name, enabled, SOURCE_MANUAL)
         except ER6020Error as err:
             raise HomeAssistantError(str(err)) from err
+
+        opts = self.coordinator.config_entry.options
+        if notifications_enabled(opts) and opts.get(
+            CONF_NOTIFY_ON_OPEN if enabled else CONF_NOTIFY_ON_CLOSE, True
+        ):
+            message = (
+                f"🚨 Port opened manually: {self._rule_name}"
+                if enabled
+                else f"✅ Port closed manually: {self._rule_name}"
+            )
+            await async_notify(self.hass, notify_targets(opts), message)
 
 
 class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):

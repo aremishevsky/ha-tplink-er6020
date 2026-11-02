@@ -10,7 +10,7 @@ Custom integration for TL-ER6020 v2 (firmware 2.0.x). Opens selected port forwar
 - When the tracked device (e.g. your phone) has been missing for **Away delay** minutes, the selected **Virtual Server** rules are enabled.
 - As soon as the device is back, they are disabled.
 - With **Use schedule** on, outside active hours (default 07:00–23:00) the selected rules are always closed.
-- Optional notifications on open/close — via a `notify` service (e.g. `mobile_app_iphone`) or in the HA UI.
+- Optional notifications on open/close (automatic and manual) — via a `notify` service (e.g. `mobile_app_iphone`) or in the HA UI.
 
 Entities:
 
@@ -26,11 +26,11 @@ The integration ships a Lovelace card — no separate install needed. Edit dashb
 - Presence, polling toggle with last update time and errors, automation toggle (🕒 when the schedule is on).
 - Selected ports (choose and reorder in the card editor) with status, time of the last change and a toggle.
 - Tap the card for details: active hours and all ports with the change log.
-- `layout: buttons` shows everything as a grid of square buttons (presence, polling, automation, ports, details) — tap a button to toggle it.
+- `layout: buttons` shows everything as a grid of square buttons (polling, automation, ports; presence too when the title is hidden) — tap a button to toggle it, tap the title or the presence button for details.
 
 ```yaml
 type: custom:tplink-er6020-card
-title: Router ports
+title: TP-Link ER6020 ports
 presence_entity: device_tracker.iphone
 show_polling: true
 show_automation: true

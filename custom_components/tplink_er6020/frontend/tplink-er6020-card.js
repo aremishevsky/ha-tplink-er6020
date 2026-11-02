@@ -4,7 +4,7 @@ const CARD = "tplink-er6020-card";
 
 const I18N = {
   en: {
-    title: "Router ports",
+    title: "TP-Link ER6020 ports",
     home: "Home",
     away: "Away",
     unknown: "Unknown",
@@ -23,7 +23,6 @@ const I18N = {
     hint: "Tap for details",
     on: "On",
     off: "Off",
-    ports_btn: "Details",
     controlled: "automated",
     active_hours: "Active hours",
     src: {
@@ -115,6 +114,7 @@ const STYLE = `
   .btn.busy { opacity: .5; }
   .header { display: flex; align-items: center; gap: 8px; padding: 16px 16px 8px; }
   .header .title { flex: 1; font-size: 1.2em; font-weight: 500; }
+  .header.clickable { cursor: pointer; }
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 12px;
           font-size: .85em; background: var(--secondary-background-color); color: var(--primary-text-color); }
   .chip.home { background: rgba(76,175,80,.15); color: var(--success-color, #4caf50); }
@@ -274,7 +274,8 @@ class TplinkEr6020Card extends HTMLElement {
       : "";
     const title = inDialog ? t.details : this._config.show_title ? this._config.title ?? t.title : "";
     if (!inDialog && !title && !chip) return "";
-    return `<div class="header"><div class="title">${esc(title)}</div>${chip}${close}</div>`;
+    const open = !inDialog && this._config.layout === "buttons" ? "data-open" : "";
+    return `<div class="header ${open ? "clickable" : ""}" ${open}><div class="title">${esc(title)}</div>${chip}${close}</div>`;
   }
 
   _automation(t, e) {
@@ -328,7 +329,7 @@ class TplinkEr6020Card extends HTMLElement {
         <ha-icon icon="${icon}"></ha-icon><div class="bname">${esc(name)}</div><div class="bstate">${esc(state)}</div></div>`;
     };
     const items = [];
-    const p = st(e.presence);
+    const p = !this._config.show_title && st(e.presence);
     if (p) {
       const home = p.state === "home", away = p.state === "not_home";
       items.push(btn({
@@ -366,7 +367,6 @@ class TplinkEr6020Card extends HTMLElement {
         title: `${s.attributes.external_port} → ${s.attributes.ipaddr}:${s.attributes.internal_port}`,
       }));
     }
-    items.push(btn({ open: true, icon: "mdi:format-list-bulleted", name: t.ports_btn, state: "" }));
     return `<div class="grid" style="--cols:${Number(this._config.columns) || 4}">${items.join("")}</div>`;
   }
 
