@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import logging
 from typing import Any
 
 from aiohttp import CookieJar
@@ -13,7 +14,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, CONF_VERIFY_SSL
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
@@ -27,12 +28,13 @@ from .const import (
     DOMAIN,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST, default="192.168.0.1"): str,
         vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
         vol.Required(CONF_PASSWORD): str,
-        vol.Optional(CONF_VERIFY_SSL, default=False): bool,
     }
 )
 
@@ -79,24 +81,18 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def _validate(self, data: dict[str, Any]) -> dict[str, str]:
-        session = async_create_clientsession(
-            self.hass,
-            verify_ssl=data.get(CONF_VERIFY_SSL, False),
-            cookie_jar=CookieJar(unsafe=True),
-        )
+        session = async_create_clientsession(self.hass, cookie_jar=CookieJar(unsafe=True))
         client = ER6020Client(
-            session,
-            data[CONF_HOST],
-            data[CONF_USERNAME],
-            data[CONF_PASSWORD],
-            data.get(CONF_VERIFY_SSL, False),
+            session, data[CONF_HOST], data[CONF_USERNAME], data[CONF_PASSWORD]
         )
         try:
             await client.login()
             await client.get_virtual_servers()
-        except ER6020AuthError:
+        except ER6020AuthError as err:
+            _LOGGER.warning("Login to %s rejected: %s", data[CONF_HOST], err)
             return {"base": "invalid_auth"}
-        except ER6020Error:
+        except ER6020Error as err:
+            _LOGGER.warning("Cannot connect to %s: %s", data[CONF_HOST], err)
             return {"base": "cannot_connect"}
         return {}
 

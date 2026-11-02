@@ -11,11 +11,25 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 from typing import Any
 
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _legacy_ssl_context() -> ssl.SSLContext:
+    """Router only offers TLS 1.2 with RSA key exchange and a SHA1 self-signed
+    cert, which Python's default cipher list rejects."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+    return ctx
+
+
+_SSL_CONTEXT = _legacy_ssl_context()
 
 URL_LOGIN = "/login?form=login"
 URL_VIRTUAL_SERVERS = "/admin/nat?form=vs"
@@ -77,13 +91,11 @@ class ER6020Client:
         host: str,
         username: str,
         password: str,
-        verify_ssl: bool = False,
     ) -> None:
         self._session = session
         self._base = host.rstrip("/") if host.startswith("http") else f"https://{host}"
         self._username = username
         self._password = password
-        self._ssl = None if verify_ssl else False
         self._stok: str | None = None
 
     async def _post(self, path: str, payload: dict[str, Any], stok: str = "") -> dict:
@@ -98,7 +110,7 @@ class ER6020Client:
                 url,
                 data={"data": json.dumps(payload, separators=(",", ":"))},
                 headers=headers,
-                ssl=self._ssl,
+                ssl=_SSL_CONTEXT,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 text = await resp.text()
