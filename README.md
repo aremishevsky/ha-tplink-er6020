@@ -26,6 +26,7 @@ The integration ships a Lovelace card — no separate install needed. Edit dashb
 - Presence, polling toggle with last update time and errors, automation toggle (🕒 when the schedule is on).
 - Selected ports (choose and reorder in the card editor) with status, time of the last change and a toggle.
 - Tap the card for details: active hours and all ports with the change log.
+- `layout: buttons` shows everything as a grid of square buttons (presence, polling, automation, ports, details) — tap a button to toggle it.
 
 ```yaml
 type: custom:tplink-er6020-card
@@ -33,6 +34,10 @@ title: Router ports
 presence_entity: device_tracker.iphone
 show_polling: true
 show_automation: true
+show_title: true      # false = no header
+background: true      # false = transparent card
+layout: list          # or: buttons
+columns: 4            # buttons per row (layout: buttons)
 entities:
   - switch.tl_er6020_port_forward_ssh
   - switch.tl_er6020_port_forward_plex
@@ -55,10 +60,11 @@ Copy `custom_components/tplink_er6020` into `/config/custom_components/` and res
 **Settings → Devices & services → Add integration → TP-Link TL-ER6020**
 
 1. Router IP, username, password (see [Router account](#router-account)).
-2. Device to track (★ = DHCP reservation, listed first), ports to control, away delay (default 10 min), polling interval (default 120 s), *Use schedule*, notification channels (with a test button).
+2. Device to track (★ = DHCP reservation, listed first), ports to control, away delay (default 10 min), polling interval (default 120 s), *Use schedule*, *Use notifications*.
 3. If *Use schedule* is ticked: active hours.
+4. If *Use notifications* is ticked: notify on open/close, notification channels, *Send a test notification*.
 
-Change step 2 later via **Configure** on the integration page.
+Change steps 2–4 later via **Configure** on the integration page.
 
 ## Check API from a laptop
 

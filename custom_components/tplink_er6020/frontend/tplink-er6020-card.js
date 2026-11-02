@@ -9,6 +9,7 @@ const I18N = {
     away: "Away",
     unknown: "Unknown",
     polling: "Router polling",
+    polling_short: "Polling",
     automation: "Automation",
     schedule_off: "Schedule: off (always active)",
     updated: "Updated",
@@ -20,6 +21,9 @@ const I18N = {
     details: "Ports",
     no_events: "No events yet",
     hint: "Tap for details",
+    on: "On",
+    off: "Off",
+    ports_btn: "Details",
     controlled: "automated",
     active_hours: "Active hours",
     src: {
@@ -43,6 +47,12 @@ const I18N = {
       presence: "Presence entity",
       show_polling: "Show polling toggle",
       show_automation: "Show automation toggle",
+      show_title: "Show title",
+      background: "Card background",
+      layout: "Layout",
+      layout_list: "List",
+      layout_buttons: "Buttons (grid)",
+      columns: "Buttons per row",
       ports: "Ports to show (order with arrows)",
       none: "No ports found — is the integration set up?",
     },
@@ -84,6 +94,25 @@ function discover(hass) {
 
 const STYLE = `
   ha-card { cursor: pointer; overflow: hidden; }
+  ha-card.transparent { background: none; box-shadow: none; border: none; }
+  ha-card.buttons { cursor: default; }
+  .grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 8px; padding: 8px; }
+  ha-card.transparent .grid { padding: 0; }
+  .btn { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+         gap: 2px; padding: 6px; box-sizing: border-box; cursor: pointer; text-align: center;
+         border-radius: var(--ha-card-border-radius, 12px);
+         background: var(--ha-card-background, var(--card-background-color, #fff));
+         border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color)); }
+  .btn ha-icon { --mdc-icon-size: 36px; color: var(--state-icon-color); }
+  .btn .bname { font-size: .95em; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .btn .bstate { font-size: .75em; color: var(--secondary-text-color); min-height: 1em; }
+  .btn.on ha-icon { color: var(--state-active-color, var(--amber-color, #ffc107)); }
+  .btn.port.on ha-icon { color: var(--warning-color, #ff9800); }
+  .btn.home ha-icon { color: var(--success-color, #4caf50); }
+  .btn.away ha-icon { color: var(--warning-color, #ff9800); }
+  .btn.error { border-color: var(--error-color, #db4437); }
+  .btn.error ha-icon, .btn.error .bstate { color: var(--error-color, #db4437); }
+  .btn.busy { opacity: .5; }
   .header { display: flex; align-items: center; gap: 8px; padding: 16px 16px 8px; }
   .header .title { flex: 1; font-size: 1.2em; font-weight: 500; }
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 12px;
@@ -160,7 +189,10 @@ class TplinkEr6020Card extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { show_polling: true, show_automation: true, ...config };
+    this._config = {
+      show_polling: true, show_automation: true, show_title: true, background: true,
+      layout: "list", columns: 4, ...config,
+    };
     this._sig = null;
     this._render();
   }
@@ -212,14 +244,17 @@ class TplinkEr6020Card extends HTMLElement {
     this._sig = sig;
 
     const t = I18N[lang(this._hass)];
+    const auto = e.automation && this._hass.states[e.automation];
+    this._autoOn = auto ? auto.state === "on" : true;
+    const buttons = this._config.layout === "buttons";
+    const body = buttons
+      ? `${this._config.show_title ? this._header(t, e, false) : ""}${this._buttons(t, e)}`
+      : `${this._header(t, e, false)}${this._automation(t, e)}
+         ${e.ports.map((id) => this._row(t, id)).join("")}
+         ${e.ports.length ? `<div class="footer">${t.hint}</div>` : ""}`;
     this.shadowRoot.innerHTML = `
       <style>${STYLE}</style>
-      <ha-card>
-        ${this._header(t, e, false)}
-        ${this._automation(t, e)}
-        ${e.ports.map((id) => this._row(t, id)).join("")}
-        ${e.ports.length ? `<div class="footer">${t.hint}</div>` : ""}
-      </ha-card>
+      <ha-card class="${this._config.background ? "" : "transparent"} ${buttons ? "buttons" : ""}">${body}</ha-card>
       ${this._open ? this._dialog(t, e) : ""}
     `;
   }
@@ -237,7 +272,8 @@ class TplinkEr6020Card extends HTMLElement {
     const close = inDialog
       ? `<button class="close" data-close><ha-icon icon="mdi:close"></ha-icon></button>`
       : "";
-    const title = inDialog ? t.details : this._config.title ?? t.title;
+    const title = inDialog ? t.details : this._config.show_title ? this._config.title ?? t.title : "";
+    if (!inDialog && !title && !chip) return "";
     return `<div class="header"><div class="title">${esc(title)}</div>${chip}${close}</div>`;
   }
 
@@ -281,6 +317,59 @@ class TplinkEr6020Card extends HTMLElement {
     return `${pollingRow}${autoRow}`;
   }
 
+  _buttons(t, e) {
+    const st = (id) => id && this._hass.states[id];
+    const pol = st(e.polling);
+    const a = pol?.attributes || {};
+    const btn = ({ id, open, icon, name, state, cls = "", title = "" }) => {
+      const busy = id && this._busy.has(id);
+      const action = id ? `data-toggle="${esc(id)}"` : open ? "data-open" : "";
+      return `<div class="btn ${cls} ${busy ? "busy" : ""}" ${action} title="${esc(title)}">
+        <ha-icon icon="${icon}"></ha-icon><div class="bname">${esc(name)}</div><div class="bstate">${esc(state)}</div></div>`;
+    };
+    const items = [];
+    const p = st(e.presence);
+    if (p) {
+      const home = p.state === "home", away = p.state === "not_home";
+      items.push(btn({
+        open: true, icon: home ? "mdi:home" : away ? "mdi:home-export-outline" : "mdi:help",
+        name: home ? t.home : away ? t.away : t.unknown, state: fmt(this._hass, p.last_changed),
+        cls: home ? "home" : away ? "away" : "",
+      }));
+    }
+    if (pol && this._config.show_polling) {
+      const on = pol.state === "on";
+      items.push(btn({
+        id: e.polling, icon: a.error ? "mdi:alert-circle" : on ? "mdi:sync" : "mdi:sync-off",
+        name: t.polling_short, cls: `${on ? "on" : ""} ${a.error ? "error" : ""}`,
+        state: a.error ? "Error" : a.last_update ? fmt(this._hass, a.last_update) : on ? t.on : t.off,
+        title: a.error || "",
+      }));
+    }
+    const auto = st(e.automation);
+    if (auto && this._config.show_automation) {
+      const on = auto.state === "on";
+      const state = !on ? "disabled" : pol?.state !== "on" ? "paused" : a.automation;
+      items.push(btn({
+        id: e.automation, icon: on ? "mdi:robot" : "mdi:robot-off", name: t.automation,
+        state: `${on ? t.on : t.off}${a.schedule_enabled ? " · 🕒" : ""}`, cls: on ? "on" : "",
+        title: t.auto[state] || "",
+      }));
+    }
+    for (const id of e.ports) {
+      const s = st(id);
+      if (!s) continue;
+      const on = s.state === "on";
+      items.push(btn({
+        id, icon: on ? "mdi:lan-connect" : "mdi:lan-disconnect", name: s.attributes.rule,
+        state: on ? t.open : t.closed, cls: `port ${on ? "on" : ""}`,
+        title: `${s.attributes.external_port} → ${s.attributes.ipaddr}:${s.attributes.internal_port}`,
+      }));
+    }
+    items.push(btn({ open: true, icon: "mdi:format-list-bulleted", name: t.ports_btn, state: "" }));
+    return `<div class="grid" style="--cols:${Number(this._config.columns) || 4}">${items.join("")}</div>`;
+  }
+
   _schedule(t, e) {
     const a = (e.polling && this._hass.states[e.polling]?.attributes) || {};
     if (!a.schedule_enabled) return t.schedule_off;
@@ -306,7 +395,7 @@ class TplinkEr6020Card extends HTMLElement {
           <ha-icon icon="${on ? "mdi:lan-connect" : "mdi:lan-disconnect"}"></ha-icon>
         </div>
         <div class="info">
-          <div class="name">${esc(a.rule)}${a.controlled ? `<span class="badge">${t.controlled}</span>` : ""}</div>
+          <div class="name">${esc(a.rule)}${a.controlled && this._autoOn ? `<span class="badge">${t.controlled}</span>` : ""}</div>
           <div class="sub">${esc(a.external_port)} → ${esc(a.ipaddr)}:${esc(a.internal_port)} ${esc(a.protocol || "")}</div>
           <div class="sub">${esc(status)}</div>
         </div>
@@ -362,7 +451,10 @@ class TplinkEr6020Card extends HTMLElement {
     }
     if (path.find((el) => el.dataset && "close" in el.dataset)) return this._setOpen(false);
     if (path[0]?.dataset && "backdrop" in path[0].dataset) return this._setOpen(false);
-    if (!this._open && path.find((el) => el.tagName === "HA-CARD")) this._setOpen(true);
+    if (this._open) return;
+    if (this._config.layout === "buttons") {
+      if (path.find((el) => el.dataset && "open" in el.dataset)) this._setOpen(true);
+    } else if (path.find((el) => el.tagName === "HA-CARD")) this._setOpen(true);
   }
 }
 
@@ -424,6 +516,17 @@ class TplinkEr6020CardEditor extends HTMLElement {
         <span>${t.editor.show_polling}</span></div>
       <div class="check"><input type="checkbox" id="sa" data-field="show_automation" ${this._config.show_automation !== false ? "checked" : ""}>
         <span>${t.editor.show_automation}</span></div>
+      <div class="check"><input type="checkbox" data-field="show_title" ${this._config.show_title !== false ? "checked" : ""}>
+        <span>${t.editor.show_title}</span></div>
+      <div class="check"><input type="checkbox" data-field="background" ${this._config.background !== false ? "checked" : ""}>
+        <span>${t.editor.background}</span></div>
+      <label>${t.editor.layout}</label>
+      <select data-field="layout">
+        <option value="list" ${this._config.layout !== "buttons" ? "selected" : ""}>${t.editor.layout_list}</option>
+        <option value="buttons" ${this._config.layout === "buttons" ? "selected" : ""}>${t.editor.layout_buttons}</option>
+      </select>
+      ${this._config.layout === "buttons" ? `<label>${t.editor.columns}</label>
+        <input type="text" inputmode="numeric" data-field="columns" value="${esc(this._config.columns ?? 4)}">` : ""}
       <label>${t.editor.ports}</label>
       ${all.length ? "" : `<div>${t.editor.none}</div>`}
       ${all
@@ -450,8 +553,12 @@ class TplinkEr6020CardEditor extends HTMLElement {
     if (el.dataset.port) {
       const { selected } = this._ports();
       this._config.entities = el.checked ? [...selected, el.dataset.port] : selected.filter((id) => id !== el.dataset.port);
-    } else if (el.dataset.field === "show_polling" || el.dataset.field === "show_automation") {
+    } else if (el.type === "checkbox" && el.dataset.field) {
       this._config[el.dataset.field] = el.checked;
+    } else if (el.dataset.field === "columns") {
+      const n = parseInt(el.value, 10);
+      if (n >= 1 && n <= 8) this._config.columns = n;
+      else delete this._config.columns;
     } else if (el.dataset.field) {
       if (el.value) this._config[el.dataset.field] = el.value;
       else delete this._config[el.dataset.field];

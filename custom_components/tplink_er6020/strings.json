@@ -11,23 +11,19 @@
       },
       "settings": {
         "title": "Port control",
-        "description": "Selected ports are opened when the device has been away for the given delay and closed as soon as it is back. ★ = device with a DHCP reservation.\n\n{test_result}",
+        "description": "Selected ports are opened when the device has been away for the given delay and closed as soon as it is back. ★ = device with a DHCP reservation.",
         "data": {
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
           "poll_interval": "Polling interval",
           "schedule_enabled": "Use schedule (active hours)",
-          "notify_on_open": "Notify when ports are opened",
-          "notify_on_close": "Notify when ports are closed",
-          "notify_services": "Notification channels",
-          "send_test": "Send a test notification"
+          "notify_enabled": "Use notifications"
         },
         "data_description": {
-          "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
-          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save.",
           "poll_interval": "How often the router is checked, in seconds. Presence is detected with up to this delay.",
-          "schedule_enabled": "When ticked, the next step asks for active hours; outside them the ports are always closed."
+          "schedule_enabled": "When ticked, the next step asks for active hours; outside them the ports are always closed.",
+          "notify_enabled": "When ticked, a next step lets you choose what to notify about and where."
         }
       },
       "reauth_confirm": {
@@ -44,6 +40,20 @@
           "active_from": "Active from",
           "active_to": "Active until"
         }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Choose when and where to send notifications.\n\n{test_result}",
+        "data": {
+          "notify_on_open": "Notify when ports are opened",
+          "notify_on_close": "Notify when ports are closed",
+          "notify_services": "Notification channels",
+          "send_test": "Send a test notification"
+        },
+        "data_description": {
+          "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
+          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save."
+        }
       }
     },
     "error": {
@@ -59,23 +69,19 @@
     "step": {
       "init": {
         "title": "Port control",
-        "description": "Selected ports are opened when the device has been away for the given delay and closed as soon as it is back. ★ = device with a DHCP reservation.\n\n{test_result}",
+        "description": "Selected ports are opened when the device has been away for the given delay and closed as soon as it is back. ★ = device with a DHCP reservation.",
         "data": {
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
           "poll_interval": "Polling interval",
           "schedule_enabled": "Use schedule (active hours)",
-          "notify_on_open": "Notify when ports are opened",
-          "notify_on_close": "Notify when ports are closed",
-          "notify_services": "Notification channels",
-          "send_test": "Send a test notification"
+          "notify_enabled": "Use notifications"
         },
         "data_description": {
-          "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
-          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save.",
           "poll_interval": "How often the router is checked, in seconds. Presence is detected with up to this delay.",
-          "schedule_enabled": "When ticked, the next step asks for active hours; outside them the ports are always closed."
+          "schedule_enabled": "When ticked, the next step asks for active hours; outside them the ports are always closed.",
+          "notify_enabled": "When ticked, a next step lets you choose what to notify about and where."
         }
       },
       "schedule": {
@@ -84,6 +90,20 @@
         "data": {
           "active_from": "Active from",
           "active_to": "Active until"
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Choose when and where to send notifications.\n\n{test_result}",
+        "data": {
+          "notify_on_open": "Notify when ports are opened",
+          "notify_on_close": "Notify when ports are closed",
+          "notify_services": "Notification channels",
+          "send_test": "Send a test notification"
+        },
+        "data_description": {
+          "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
+          "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save."
         }
       }
     },

@@ -9,6 +9,7 @@ CONF_POLL_INTERVAL = "poll_interval"  # seconds
 CONF_SCHEDULE_ENABLED = "schedule_enabled"
 CONF_ACTIVE_FROM = "active_from"
 CONF_ACTIVE_TO = "active_to"
+CONF_NOTIFY_ENABLED = "notify_enabled"
 CONF_NOTIFY_ON_OPEN = "notify_on_open"
 CONF_NOTIFY_ON_CLOSE = "notify_on_close"
 CONF_NOTIFY_SERVICE = "notify_service"  # legacy single channel (<= 0.3.0)

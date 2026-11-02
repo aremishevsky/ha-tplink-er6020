@@ -8,7 +8,7 @@ from typing import Any
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_NOTIFY_SERVICE, CONF_NOTIFY_SERVICES, DOMAIN
+from .const import CONF_NOTIFY_ENABLED, CONF_NOTIFY_SERVICE, CONF_NOTIFY_SERVICES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +24,10 @@ def notify_targets(options: Mapping[str, Any]) -> list[str]:
     if legacy := options.get(CONF_NOTIFY_SERVICE):
         return [legacy]
     return [HA_UI]
+
+
+def notifications_enabled(options: Mapping[str, Any]) -> bool:
+    return options.get(CONF_NOTIFY_ENABLED, True)
 
 
 async def async_notify(

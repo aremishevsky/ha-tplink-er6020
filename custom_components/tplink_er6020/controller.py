@@ -34,7 +34,7 @@ from .const import (
     SOURCE_SCHEDULE,
 )
 from .coordinator import ER6020Coordinator
-from .notify import async_notify, notify_targets
+from .notify import async_notify, notifications_enabled, notify_targets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,9 +42,9 @@ RETRY_INTERVAL = timedelta(minutes=2)
 _KEEP = object()
 
 MESSAGES = {
-    SOURCE_AWAY: "Ports opened (you left home): {}",
-    SOURCE_HOME: "Ports closed (you're home): {}",
-    SOURCE_SCHEDULE: "Ports closed (outside active hours): {}",
+    SOURCE_AWAY: "🚨 Ports opened (you left home): {}",
+    SOURCE_HOME: "✅ Ports closed (you're home): {}",
+    SOURCE_SCHEDULE: "✅ Ports closed (outside active hours): {}",
 }
 
 
@@ -142,7 +142,8 @@ class PortController:
                 # Alert once per decision; it is retried every RETRY_INTERVAL.
                 if self._failed != decision:
                     self._failed = decision
-                    await async_notify(self.hass, notify_targets(self.entry.options), message)
+                    if notifications_enabled(self.entry.options):
+                        await async_notify(self.hass, notify_targets(self.entry.options), f"⚠️ {message}")
                 return
             self._failed = self._retry_at = None
             self._applied = decision
@@ -178,7 +179,9 @@ class PortController:
             return
         _LOGGER.info("%s ports (%s): %s", "Opened" if enable else "Closed", source, ", ".join(changed))
         opts = self.entry.options
-        if opts.get(CONF_NOTIFY_ON_OPEN if enable else CONF_NOTIFY_ON_CLOSE, True):
+        if notifications_enabled(opts) and opts.get(
+            CONF_NOTIFY_ON_OPEN if enable else CONF_NOTIFY_ON_CLOSE, True
+        ):
             await async_notify(
                 self.hass, notify_targets(opts), MESSAGES[source].format(", ".join(changed))
             )

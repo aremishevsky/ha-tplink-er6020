@@ -79,8 +79,13 @@ def _async_cleanup_registry(hass: HomeAssistant, entry: ER6020ConfigEntry) -> No
 
     ent_reg = er.async_get(hass)
     for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        if ent.domain == "device_tracker" and ent.unique_id != tracked:
+        if ent.domain != "device_tracker":
+            continue
+        if ent.unique_id != tracked:
             ent_reg.async_remove(ent.entity_id)
+        elif ent.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+            # 0.1.x registered every tracker disabled; the chosen one must work.
+            ent_reg.async_update_entity(ent.entity_id, disabled_by=None)
 
     dev_reg = dr.async_get(hass)
     for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
