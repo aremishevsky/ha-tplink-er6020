@@ -18,6 +18,7 @@ from .const import (
     CONF_ACTIVE_TO,
     CONF_AWAY_DELAY,
     CONF_RULES,
+    CONF_SCHEDULE_ENABLED,
     CONF_TRACKED_MAC,
     DEFAULT_ACTIVE_FROM,
     DEFAULT_ACTIVE_TO,
@@ -44,7 +45,7 @@ async def async_setup_entry(
         known.update(new)
         async_add_entities(VirtualServerSwitch(coordinator, name) for name in new)
 
-    async_add_entities([PollingSwitch(coordinator)])
+    async_add_entities([PollingSwitch(coordinator), AutomationSwitch(coordinator)])
     _add_new()
     entry.async_on_unload(coordinator.async_add_listener(_add_new))
 
@@ -155,7 +156,10 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
         if error is None and c.polling and not c.last_update_success:
             error = f"Router not reachable: {c.last_exception}"
         return {
+            "kind": "polling",
             "automation": c.automation_state,
+            "automation_enabled": c.automation_enabled,
+            "schedule_enabled": opts.get(CONF_SCHEDULE_ENABLED, True),
             "error": error,
             "last_update": c.last_poll,
             "tracked_device": opts.get(CONF_TRACKED_MAC),
@@ -172,3 +176,38 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_polling(False)
         self.async_write_ha_state()
+
+
+class AutomationSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
+    """Turn off to stop opening/closing ports automatically (polling continues)."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Automation"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: ER6020Coordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_automation"
+        self._attr_device_info = _device_info(coordinator)
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.automation_enabled
+
+    @property
+    def icon(self) -> str:
+        return "mdi:robot" if self.coordinator.automation_enabled else "mdi:robot-off"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"kind": "automation"}
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self.coordinator.async_set_automation(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self.coordinator.async_set_automation(False)

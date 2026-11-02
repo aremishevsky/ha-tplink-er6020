@@ -6,31 +6,33 @@ Custom integration for TL-ER6020 v2 (firmware 2.0.x). Opens selected port forwar
 
 ## How it works
 
-- Every **Polling interval** (default 2 min) the integration reads the router's ARP table.
+- Every **Polling interval** (default 120 s) the integration reads the router's ARP table.
 - When the tracked device (e.g. your phone) has been missing for **Away delay** minutes, the selected **Virtual Server** rules are enabled.
 - As soon as the device is back, they are disabled.
-- Outside **active hours** (default 07:00–23:00) the selected rules are always closed.
+- With **Use schedule** on, outside active hours (default 07:00–23:00) the selected rules are always closed.
 - Optional notifications on open/close — via a `notify` service (e.g. `mobile_app_iphone`) or in the HA UI.
 
 Entities:
 
 - `switch` per Virtual Server rule (Transmission → NAT → Virtual Servers) for manual control. Attributes include `last_on`, `last_off` and a change `log` with the reason (away / home / schedule / manual / router).
 - `switch` **Router polling** — turn off to stop all requests to the router (e.g. while you use its web UI, which allows only one admin session). Port switches keep working on demand; automation is paused.
+- `switch` **Automation** — turn off to stop opening/closing ports automatically; polling and manual control keep working.
 - `device_tracker` for the tracked device — can be added to a `person`.
 
 ## Dashboard card
 
 The integration ships a Lovelace card — no separate install needed. Edit dashboard → **Add card** → **TP-Link ER6020 AutoPortOnOff**.
 
-- Presence, automation status, polling toggle.
+- Presence, polling toggle with last update time and errors, automation toggle (🕒 when the schedule is on).
 - Selected ports (choose and reorder in the card editor) with status, time of the last change and a toggle.
-- Tap the card for details: all ports with the change log.
+- Tap the card for details: active hours and all ports with the change log.
 
 ```yaml
 type: custom:tplink-er6020-card
 title: Router ports
 presence_entity: device_tracker.iphone
 show_polling: true
+show_automation: true
 entities:
   - switch.tl_er6020_port_forward_ssh
   - switch.tl_er6020_port_forward_plex
@@ -53,7 +55,8 @@ Copy `custom_components/tplink_er6020` into `/config/custom_components/` and res
 **Settings → Devices & services → Add integration → TP-Link TL-ER6020**
 
 1. Router IP, username, password (see [Router account](#router-account)).
-2. Device to track (★ = DHCP reservation, listed first), ports to control, away delay (default 10 min), active hours, notifications.
+2. Device to track (★ = DHCP reservation, listed first), ports to control, away delay (default 10 min), polling interval (default 120 s), *Use schedule*, notification channels (with a test button).
+3. If *Use schedule* is ticked: active hours.
 
 Change step 2 later via **Configure** on the integration page.
 

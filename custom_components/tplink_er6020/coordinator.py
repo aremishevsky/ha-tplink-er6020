@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.storage import Store
@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import ER6020AuthError, ER6020Client, ER6020Error
-from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN, LOG_SIZE, SOURCE_ROUTER
+from .const import DOMAIN, LOG_SIZE, SOURCE_ROUTER, poll_interval
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,9 +86,7 @@ async def fetch_router_data(client: ER6020Client) -> RouterData:
 
 class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: ER6020Client) -> None:
-        self._interval = timedelta(
-            minutes=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        )
+        self._interval = timedelta(seconds=poll_interval(entry.options))
         super().__init__(
             hass,
             _LOGGER,
@@ -108,6 +106,7 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
     async def async_load(self) -> None:
         self._stored = await self._store.async_load() or {}
         self._stored.setdefault("polling", True)
+        self._stored.setdefault("automation", True)
         self._stored.setdefault("log", {})
         if not self.polling:
             self.update_interval = None
@@ -125,6 +124,16 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
     @property
     def polling(self) -> bool:
         return self._stored.get("polling", True)
+
+    @property
+    def automation_enabled(self) -> bool:
+        return self._stored.get("automation", True)
+
+    @callback
+    def async_set_automation(self, enabled: bool) -> None:
+        self._stored["automation"] = enabled
+        self._save()
+        self.async_update_listeners()
 
     @property
     def last_poll(self) -> str | None:

@@ -16,19 +16,18 @@
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
-          "scan_interval": "Polling interval",
-          "active_from": "Active from",
-          "active_to": "Active until",
+          "poll_interval": "Polling interval",
+          "schedule_enabled": "Use schedule (active hours)",
           "notify_on_open": "Notify when ports are opened",
           "notify_on_close": "Notify when ports are closed",
           "notify_services": "Notification channels",
           "send_test": "Send a test notification"
         },
         "data_description": {
-          "active_from": "Outside active hours the ports are always closed. Same time in both fields = always active.",
           "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
           "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save.",
-          "scan_interval": "How often the router is checked. Presence is detected with up to this delay."
+          "poll_interval": "How often the router is checked, in seconds. Presence is detected with up to this delay.",
+          "schedule_enabled": "When ticked, the next step asks for active hours; outside them the ports are always closed."
         }
       },
       "reauth_confirm": {
@@ -36,6 +35,14 @@
         "description": "Login failed. Note: the router locks logins after 10 failed attempts.",
         "data": {
           "password": "Password"
+        }
+      },
+      "schedule": {
+        "title": "Active hours",
+        "description": "Outside these hours the controlled ports are always closed. Same time in both fields = always active.",
+        "data": {
+          "active_from": "Active from",
+          "active_to": "Active until"
         }
       }
     },
@@ -57,19 +64,26 @@
           "tracked_mac": "Device to track",
           "rules": "Ports to control",
           "away_delay": "Away delay",
-          "scan_interval": "Polling interval",
-          "active_from": "Active from",
-          "active_to": "Active until",
+          "poll_interval": "Polling interval",
+          "schedule_enabled": "Use schedule (active hours)",
           "notify_on_open": "Notify when ports are opened",
           "notify_on_close": "Notify when ports are closed",
           "notify_services": "Notification channels",
           "send_test": "Send a test notification"
         },
         "data_description": {
-          "active_from": "Outside active hours the ports are always closed. Same time in both fields = always active.",
           "notify_services": "Where to send notifications. Phones/laptops with the Home Assistant Companion app appear as notify.mobile_app_*.",
           "send_test": "Tick and press Submit to send a test to the selected channels — the form stays open. Untick to save.",
-          "scan_interval": "How often the router is checked. Presence is detected with up to this delay."
+          "poll_interval": "How often the router is checked, in seconds. Presence is detected with up to this delay.",
+          "schedule_enabled": "When ticked, the next step asks for active hours; outside them the ports are always closed."
+        }
+      },
+      "schedule": {
+        "title": "Active hours",
+        "description": "Outside these hours the controlled ports are always closed. Same time in both fields = always active.",
+        "data": {
+          "active_from": "Active from",
+          "active_to": "Active until"
         }
       }
     },

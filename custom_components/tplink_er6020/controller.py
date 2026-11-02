@@ -23,6 +23,7 @@ from .const import (
     CONF_NOTIFY_ON_CLOSE,
     CONF_NOTIFY_ON_OPEN,
     CONF_RULES,
+    CONF_SCHEDULE_ENABLED,
     CONF_TRACKED_MAC,
     DEFAULT_ACTIVE_FROM,
     DEFAULT_ACTIVE_TO,
@@ -67,6 +68,7 @@ class PortController:
         self._delay = timedelta(minutes=opts.get(CONF_AWAY_DELAY, DEFAULT_AWAY_DELAY))
         self._start = time.fromisoformat(opts.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM))
         self._end = time.fromisoformat(opts.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO))
+        self._schedule = opts.get(CONF_SCHEDULE_ENABLED, True)
         self._last_seen = dt_util.utcnow()
         # Last applied decision; None = nothing applied yet.
         self._applied: tuple[bool, str] | None = None
@@ -92,7 +94,7 @@ class PortController:
     def _decide(self, now: datetime) -> tuple[bool, str] | None:
         """Return (open?, reason) or None when the state is unknown."""
         data = self.coordinator.data
-        if not in_window(dt_util.as_local(now).time(), self._start, self._end):
+        if self._schedule and not in_window(dt_util.as_local(now).time(), self._start, self._end):
             return False, SOURCE_SCHEDULE
         if data.present is None:
             return None
@@ -107,6 +109,11 @@ class PortController:
 
     async def _evaluate(self) -> None:
         async with self._lock:
+            if not self.coordinator.automation_enabled:
+                # Re-apply the current decision when it's switched back on.
+                self._applied = self._failed = self._retry_at = None
+                self._set_state("disabled", None)
+                return
             if not self.coordinator.polling or not self.coordinator.last_update_success:
                 self._set_state("paused" if not self.coordinator.polling else None)
                 return

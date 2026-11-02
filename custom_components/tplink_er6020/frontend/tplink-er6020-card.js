@@ -9,6 +9,8 @@ const I18N = {
     away: "Away",
     unknown: "Unknown",
     polling: "Router polling",
+    automation: "Automation",
+    schedule_off: "Schedule: off (always active)",
     updated: "Updated",
     not_updated: "No data from the router yet",
     open: "Open",
@@ -33,12 +35,14 @@ const I18N = {
       leaving: "Waiting for away delay",
       schedule: "Night — ports closed",
       paused: "Polling off — automation paused",
+      disabled: "Off — ports are not changed automatically",
       error: "Automation error",
     },
     editor: {
       title: "Title",
       presence: "Presence entity",
       show_polling: "Show polling toggle",
+      show_automation: "Show automation toggle",
       ports: "Ports to show (order with arrows)",
       none: "No ports found — is the integration set up?",
     },
@@ -73,6 +77,7 @@ function discover(hass) {
   return {
     ports: ids.filter((id) => id.startsWith("switch.") && st(id)?.attributes?.rule !== undefined),
     polling: ids.find((id) => id.startsWith("switch.") && st(id) && "automation" in st(id).attributes),
+    automation: ids.find((id) => id.startsWith("switch.") && st(id)?.attributes?.kind === "automation"),
     trackers: ids.filter((id) => id.startsWith("device_tracker.")),
   };
 }
@@ -95,6 +100,11 @@ const STYLE = `
   .sw.on.error { background: var(--error-color, #db4437); }
   .err { color: var(--error-color, #db4437); font-size: .85em; overflow-wrap: anywhere; }
   .auto .err { margin-top: 2px; }
+  .icon.off { opacity: .6; }
+  .clock { --mdc-icon-size: 16px; color: var(--secondary-text-color); vertical-align: -2px; margin-left: 4px; }
+  .clock.night { color: var(--primary-color); }
+  .auto.schedule { display: flex; align-items: center; gap: 6px; padding: 12px 16px 4px; }
+  .auto.schedule ha-icon { --mdc-icon-size: 18px; }
   .info { flex: 1; min-width: 0; }
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { color: var(--secondary-text-color); font-size: .85em; }
@@ -150,7 +160,7 @@ class TplinkEr6020Card extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { show_polling: true, ...config };
+    this._config = { show_polling: true, show_automation: true, ...config };
     this._sig = null;
     this._render();
   }
@@ -183,6 +193,7 @@ class TplinkEr6020Card extends HTMLElement {
       ports,
       all,
       polling: this._config.polling_entity || found.polling,
+      automation: this._config.automation_entity || found.automation,
       presence: this._config.presence_entity || found.trackers[0],
     };
   }
@@ -190,7 +201,7 @@ class TplinkEr6020Card extends HTMLElement {
   _render() {
     if (!this._hass || !this._config) return;
     const e = this._entities();
-    const ids = [...e.all, e.polling, e.presence].filter(Boolean);
+    const ids = [...e.all, e.polling, e.automation, e.presence].filter(Boolean);
     const sig = JSON.stringify([
       this._open,
       [...this._busy],
@@ -234,33 +245,46 @@ class TplinkEr6020Card extends HTMLElement {
     const pol = e.polling && this._hass.states[e.polling];
     if (!pol) return "";
     const a = pol.attributes;
-    const state = pol.state === "off" ? "paused" : a.automation;
-    const text = [
-      t.auto[state],
-      a.active_from && a.active_to && a.active_from !== a.active_to
-        ? `${t.active_hours}: ${a.active_from.slice(0, 5)}–${a.active_to.slice(0, 5)}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    const on = pol.state === "on";
+    const polling = pol.state === "on";
     const error = a.error
       ? `<div class="err" title="${esc(a.error)}">⚠ ${esc(a.error.length > 120 ? `${a.error.slice(0, 117)}…` : a.error)}</div>`
       : "";
     const updated = a.last_update ? `${t.updated} ${fmt(this._hass, a.last_update)}` : t.not_updated;
-    const toggle = this._config.show_polling
+    const pollingRow = this._config.show_polling
       ? `<div class="row">
            <div class="icon ${a.error ? "error" : ""}">
-             <ha-icon icon="${a.error ? "mdi:alert-circle" : on ? "mdi:sync" : "mdi:sync-off"}"></ha-icon>
+             <ha-icon icon="${a.error ? "mdi:alert-circle" : polling ? "mdi:sync" : "mdi:sync-off"}"></ha-icon>
            </div>
            <div class="info"><div class="name">${t.polling}</div><div class="sub">${esc(updated)}</div>${error}</div>
-           ${this._switch(e.polling, on, false, a.error ? "error" : "")}
+           ${this._switch(e.polling, polling, false, a.error ? "error" : "")}
          </div>`
       : "";
-    const auto = text || (!this._config.show_polling && error)
-      ? `<div class="auto">${esc(text)}${this._config.show_polling ? "" : error}</div>`
+
+    const auto = e.automation && this._hass.states[e.automation];
+    const autoOn = auto ? auto.state === "on" : a.automation_enabled !== false;
+    const state = !autoOn ? "disabled" : !polling ? "paused" : a.automation;
+    const clock = a.schedule_enabled
+      ? `<ha-icon class="clock ${a.automation === "schedule" ? "night" : ""}" icon="mdi:clock-outline"
+           title="${esc(`${t.active_hours}: ${(a.active_from || "").slice(0, 5)}–${(a.active_to || "").slice(0, 5)}`)}"></ha-icon>`
       : "";
-    return `${toggle}${auto}`;
+    const status = esc(t.auto[state] || "");
+    const autoRow = this._config.show_automation && auto
+      ? `<div class="row">
+           <div class="icon ${autoOn ? "" : "off"}"><ha-icon icon="${autoOn ? "mdi:robot" : "mdi:robot-off"}"></ha-icon></div>
+           <div class="info"><div class="name">${t.automation} ${clock}</div><div class="sub">${status}</div>
+             ${this._config.show_polling ? "" : error}</div>
+           ${this._switch(e.automation, autoOn)}
+         </div>`
+      : status || clock || (!this._config.show_polling && error)
+        ? `<div class="auto">${clock}${status}${this._config.show_polling ? "" : error}</div>`
+        : "";
+    return `${pollingRow}${autoRow}`;
+  }
+
+  _schedule(t, e) {
+    const a = (e.polling && this._hass.states[e.polling]?.attributes) || {};
+    if (!a.schedule_enabled) return t.schedule_off;
+    return `${t.active_hours}: ${(a.active_from || "").slice(0, 5)}–${(a.active_to || "").slice(0, 5)}`;
   }
 
   _switch(id, on, disabled = false, extra = "") {
@@ -306,7 +330,8 @@ class TplinkEr6020Card extends HTMLElement {
         return `<div class="port">${this._row(t, id)}${items}</div>`;
       })
       .join("");
-    return `<div class="backdrop" data-backdrop><div class="dialog">${this._header(t, e, true)}${ports}</div></div>`;
+    const schedule = `<div class="auto schedule"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(this._schedule(t, e))}</div>`;
+    return `<div class="backdrop" data-backdrop><div class="dialog">${this._header(t, e, true)}${schedule}${ports}</div></div>`;
   }
 
   _setOpen(open) {
@@ -397,6 +422,8 @@ class TplinkEr6020CardEditor extends HTMLElement {
       </select>
       <div class="check"><input type="checkbox" id="sp" data-field="show_polling" ${this._config.show_polling !== false ? "checked" : ""}>
         <span>${t.editor.show_polling}</span></div>
+      <div class="check"><input type="checkbox" id="sa" data-field="show_automation" ${this._config.show_automation !== false ? "checked" : ""}>
+        <span>${t.editor.show_automation}</span></div>
       <label>${t.editor.ports}</label>
       ${all.length ? "" : `<div>${t.editor.none}</div>`}
       ${all
@@ -423,8 +450,8 @@ class TplinkEr6020CardEditor extends HTMLElement {
     if (el.dataset.port) {
       const { selected } = this._ports();
       this._config.entities = el.checked ? [...selected, el.dataset.port] : selected.filter((id) => id !== el.dataset.port);
-    } else if (el.dataset.field === "show_polling") {
-      this._config.show_polling = el.checked;
+    } else if (el.dataset.field === "show_polling" || el.dataset.field === "show_automation") {
+      this._config[el.dataset.field] = el.checked;
     } else if (el.dataset.field) {
       if (el.value) this._config[el.dataset.field] = el.value;
       else delete this._config[el.dataset.field];

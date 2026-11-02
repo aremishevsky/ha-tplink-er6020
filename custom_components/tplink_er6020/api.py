@@ -225,19 +225,15 @@ class ER6020Client:
         else:
             raise ER6020Error(f"Virtual server '{name}' not found")
 
-        key = rule.get("key", f"key-{index}")
-        old = {f: rule.get(f) for f in VS_FIELDS} | {"key": key}
-        new = {f: rule.get(f) for f in VS_FIELDS} | {"enable": "on" if enabled else "off"}
+        # Same body the web UI sends (captured from the browser): old/new are
+        # objects with the grid fields; "key" is the grid's own row id.
+        old = {f: rule[f] for f in VS_FIELDS if rule.get(f) is not None}
+        new = old | {"enable": "on" if enabled else "off"}
         await self._request(
             URL_VIRTUAL_SERVERS,
             write=True,
             payload={
                 "method": "set",
-                "params": {
-                    "index": index,
-                    "key": key,
-                    "old": json.dumps(old, separators=(",", ":")),
-                    "new": json.dumps(new, separators=(",", ":")),
-                },
+                "params": {"index": index, "old": old, "new": new, "key": f"key-{index}"},
             },
         )

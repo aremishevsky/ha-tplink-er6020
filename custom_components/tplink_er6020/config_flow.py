@@ -40,15 +40,17 @@ from .const import (
     CONF_NOTIFY_SERVICES,
     CONF_SEND_TEST,
     CONF_RULES,
+    CONF_POLL_INTERVAL,
     CONF_SCAN_INTERVAL,
+    CONF_SCHEDULE_ENABLED,
     CONF_TRACKED_MAC,
     DEFAULT_ACTIVE_FROM,
     DEFAULT_ACTIVE_TO,
     DEFAULT_AWAY_DELAY,
     DEFAULT_HOST,
-    DEFAULT_SCAN_INTERVAL,
     DEFAULT_USERNAME,
     DOMAIN,
+    poll_interval,
 )
 from .coordinator import Client, RouterData, fetch_router_data
 from .notify import HA_UI, async_notify, notify_targets
@@ -128,19 +130,14 @@ def settings_schema(
                     min=1, max=1440, step=1, unit_of_measurement="min", mode=NumberSelectorMode.BOX
                 )
             ),
-            vol.Required(
-                CONF_SCAN_INTERVAL, default=defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-            ): NumberSelector(
+            vol.Required(CONF_POLL_INTERVAL, default=poll_interval(defaults)): NumberSelector(
                 NumberSelectorConfig(
-                    min=1, max=60, step=1, unit_of_measurement="min", mode=NumberSelectorMode.BOX
+                    min=30, max=3600, step=1, unit_of_measurement="s", mode=NumberSelectorMode.BOX
                 )
             ),
             vol.Required(
-                CONF_ACTIVE_FROM, default=defaults.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM)
-            ): TimeSelector(),
-            vol.Required(
-                CONF_ACTIVE_TO, default=defaults.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO)
-            ): TimeSelector(),
+                CONF_SCHEDULE_ENABLED, default=defaults.get(CONF_SCHEDULE_ENABLED, True)
+            ): BooleanSelector(),
             vol.Required(
                 CONF_NOTIFY_ON_OPEN, default=defaults.get(CONF_NOTIFY_ON_OPEN, True)
             ): BooleanSelector(),
@@ -155,11 +152,26 @@ def settings_schema(
     )
 
 
-def _normalize(user_input: dict[str, Any]) -> dict[str, Any]:
-    data = {**user_input, CONF_AWAY_DELAY: int(user_input[CONF_AWAY_DELAY])}
-    if CONF_SCAN_INTERVAL in data:
-        data[CONF_SCAN_INTERVAL] = int(data[CONF_SCAN_INTERVAL])
-    data.pop(CONF_SEND_TEST, None)
+def schedule_schema(defaults: Mapping[str, Any]) -> vol.Schema:
+    """Shown only when "Use schedule" is ticked."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_ACTIVE_FROM, default=defaults.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM)
+            ): TimeSelector(),
+            vol.Required(
+                CONF_ACTIVE_TO, default=defaults.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO)
+            ): TimeSelector(),
+        }
+    )
+
+
+def _normalize(user_input: dict[str, Any], previous: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Clean form input; keep previously chosen schedule times."""
+    data = {k: v for k, v in (previous or {}).items() if k in (CONF_ACTIVE_FROM, CONF_ACTIVE_TO)}
+    data |= {k: v for k, v in user_input.items() if k not in (CONF_SEND_TEST, CONF_SCAN_INTERVAL)}
+    data[CONF_AWAY_DELAY] = int(data[CONF_AWAY_DELAY])
+    data[CONF_POLL_INTERVAL] = int(data.get(CONF_POLL_INTERVAL, poll_interval(previous or {})))
     data.setdefault(CONF_NOTIFY_SERVICES, [])
     return data
 
@@ -183,6 +195,7 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._credentials: dict[str, Any] = {}
         self._router: RouterData | None = None
+        self._options: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -208,17 +221,31 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._router is not None
         result = ""
         if user_input is not None:
+            self._options = _normalize(user_input)
             if not user_input.get(CONF_SEND_TEST):
-                return self.async_create_entry(
-                    title=f"AutoPortOnOff ({self._credentials[CONF_HOST]})",
-                    data=self._credentials,
-                    options=_normalize(user_input),
-                )
+                if self._options[CONF_SCHEDULE_ENABLED]:
+                    return await self.async_step_schedule()
+                return self._create()
             result = await _send_test(self.hass, user_input.get(CONF_NOTIFY_SERVICES, []))
         return self.async_show_form(
             step_id="settings",
-            data_schema=settings_schema(self.hass, self._router, _normalize(user_input) if user_input else {}),
+            data_schema=settings_schema(self.hass, self._router, self._options),
             description_placeholders={"test_result": result},
+        )
+
+    async def async_step_schedule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            self._options |= user_input
+            return self._create()
+        return self.async_show_form(step_id="schedule", data_schema=schedule_schema(self._options))
+
+    def _create(self) -> ConfigFlowResult:
+        return self.async_create_entry(
+            title=f"AutoPortOnOff ({self._credentials[CONF_HOST]})",
+            data=self._credentials,
+            options=self._options,
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
@@ -264,6 +291,9 @@ class ER6020ConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ER6020OptionsFlow(OptionsFlow):
+    def __init__(self) -> None:
+        self._options: dict[str, Any] = {}
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         coordinator = getattr(self.config_entry, "runtime_data", None)
         if coordinator is None or coordinator.data is None:
@@ -272,12 +302,22 @@ class ER6020OptionsFlow(OptionsFlow):
         result = ""
         defaults: Mapping[str, Any] = self.config_entry.options
         if user_input is not None:
+            self._options = _normalize(user_input, self.config_entry.options)
             if not user_input.get(CONF_SEND_TEST):
-                return self.async_create_entry(data=_normalize(user_input))
+                if self._options[CONF_SCHEDULE_ENABLED]:
+                    return await self.async_step_schedule()
+                return self.async_create_entry(data=self._options)
             result = await _send_test(self.hass, user_input.get(CONF_NOTIFY_SERVICES, []))
-            defaults = _normalize(user_input)
+            defaults = self._options
         return self.async_show_form(
             step_id="init",
             data_schema=settings_schema(self.hass, coordinator.data, defaults),
             description_placeholders={"test_result": result},
         )
+
+    async def async_step_schedule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=self._options | user_input)
+        return self.async_show_form(step_id="schedule", data_schema=schedule_schema(self._options))
