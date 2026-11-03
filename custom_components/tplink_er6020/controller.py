@@ -69,7 +69,8 @@ class PortController:
         self._start = time.fromisoformat(opts.get(CONF_ACTIVE_FROM, DEFAULT_ACTIVE_FROM))
         self._end = time.fromisoformat(opts.get(CONF_ACTIVE_TO, DEFAULT_ACTIVE_TO))
         self._schedule = opts.get(CONF_SCHEDULE_ENABLED, True)
-        self._last_seen = dt_util.utcnow()
+        # Away delay start when the device was never seen.
+        self._started = dt_util.utcnow()
         # Last applied decision; None = nothing applied yet.
         self._applied: tuple[bool, str] | None = None
         self._failed: tuple[bool, str] | None = None
@@ -91,21 +92,26 @@ class PortController:
                 self.hass, self._evaluate(), f"{DOMAIN}_evaluate"
             )
 
-    def _decide(self, now: datetime) -> tuple[bool, str] | None:
-        """Return (open?, reason) or None when the state is unknown."""
+    def _decide(self, now: datetime) -> tuple[bool | None, str] | None:
+        """Return (open?, reason) or None when the state is unknown.
+
+        open? is None while waiting for the away delay with nothing applied yet.
+        """
         data = self.coordinator.data
         if self._schedule and not in_window(dt_util.as_local(now).time(), self._start, self._end):
             return False, SOURCE_SCHEDULE
         if data.present is None:
             return None
         if self._mac in data.present:
-            self._last_seen = now
             return False, SOURCE_HOME
-        if now - self._last_seen >= self._delay:
+        # Persisted by the coordinator, so a restart doesn't restart the away delay.
+        seen = self.coordinator.last_seen
+        last_seen = dt_util.parse_datetime(seen) if seen else self._started
+        if now - last_seen >= self._delay:
             return True, SOURCE_AWAY
         # Absent but within the delay: keep whatever was decided before.
         # Right after a restart nothing was decided yet, so don't touch the rules.
-        return (self._applied[0], "leaving") if self._applied else None
+        return (self._applied[0] if self._applied else None, "leaving")
 
     async def _evaluate(self) -> None:
         async with self._lock:
@@ -127,7 +133,7 @@ class PortController:
                 "error" if failing else None if decision is None else decision[1],
                 _KEEP if failing else None,
             )
-            if decision is None or decision[0] == (self._applied or (None,))[0]:
+            if decision is None or decision[0] in (None, (self._applied or (None,))[0]):
                 return
             if failing and self._retry_at and now < self._retry_at:
                 return

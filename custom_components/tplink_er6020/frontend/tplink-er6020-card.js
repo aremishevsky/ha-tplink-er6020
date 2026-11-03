@@ -7,6 +7,10 @@ const I18N = {
     title: "TP-Link ER6020 ports",
     home: "Home",
     away: "Away",
+    leaving: "Leaving",
+    last_seen: "last seen {time}",
+    opens_at: "ports open at {time}",
+    opens_short: "opens {time}",
     unknown: "Unknown",
     polling: "Router polling",
     polling_short: "Polling",
@@ -140,6 +144,7 @@ const STYLE = `
   .btn.port.on ha-icon { color: var(--warning-color, #ff9800); }
   .btn.home ha-icon { color: var(--success-color, #4caf50); }
   .btn.away ha-icon { color: var(--warning-color, #ff9800); }
+  .btn.leaving ha-icon { color: var(--info-color, #039be5); }
   .btn.error { border-color: var(--error-color, #db4437); }
   .btn.error ha-icon, .btn.error .bstate { color: var(--error-color, #db4437); }
   .btn.busy { opacity: .5; }
@@ -150,11 +155,13 @@ const STYLE = `
           font-size: .85em; background: var(--secondary-background-color); color: var(--primary-text-color); }
   .chip.home { background: rgba(76,175,80,.15); color: var(--success-color, #4caf50); }
   .chip.away { background: rgba(255,152,0,.15); color: var(--warning-color, #ff9800); }
+  .chip.leaving { background: rgba(3,155,229,.15); color: var(--info-color, #039be5); }
   .chip ha-icon { --mdc-icon-size: 16px; }
   .auto { padding: 0 16px 8px; color: var(--secondary-text-color); font-size: .85em; }
   .row { display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
   .icon { flex: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center;
           justify-content: center; background: var(--secondary-background-color); color: var(--state-icon-color); }
+  .icon.leaving { background: rgba(3,155,229,.15); color: var(--info-color, #039be5); }
   .icon.on { background: rgba(255,152,0,.2); color: var(--warning-color, #ff9800); }
   .icon.error { background: rgba(219,68,55,.15); color: var(--error-color, #db4437); }
   .sw.on.error { background: var(--error-color, #db4437); }
@@ -334,15 +341,11 @@ class TplinkEr6020Card extends HTMLElement {
   }
 
   _header(t, e, inDialog) {
-    const p = e.presence && this._hass.states[e.presence];
-    let chip = "";
-    if (p) {
-      const cls = p.state === "home" ? "home" : p.state === "not_home" ? "away" : "";
-      const label = cls === "home" ? t.home : cls === "away" ? t.away : t.unknown;
-      const icon = cls === "home" ? "mdi:home" : cls === "away" ? "mdi:home-export-outline" : "mdi:help";
-      chip = `<span class="chip ${cls}"><ha-icon icon="${icon}"></ha-icon>${label}
-        ${cls ? `<span>· ${fmt(this._hass, p.last_changed)}</span>` : ""}</span>`;
-    }
+    const pr = this._presence(t, e);
+    const chip = pr
+      ? `<span class="chip ${pr.cls}" title="${esc(pr.title)}"><ha-icon icon="${pr.icon}"></ha-icon>${pr.label}
+        ${pr.time ? `<span>· ${pr.time}</span>` : ""}</span>`
+      : "";
     const close = inDialog
       ? `<button class="close" data-close><ha-icon icon="mdi:close"></ha-icon></button>`
       : "";
@@ -350,6 +353,37 @@ class TplinkEr6020Card extends HTMLElement {
     if (!inDialog && !title && !chip) return "";
     const open = !inDialog && this._config.layout === "buttons" ? "data-open" : "";
     return `<div class="header ${open ? "clickable" : ""}" ${open}><div class="title">${esc(title)}</div>${chip}${close}</div>`;
+  }
+
+  /**
+   * Presence of the tracked device. Home shows the last poll that saw it;
+   * Leaving = gone, the automation waits for the away delay before opening ports.
+   */
+  _presence(t, e) {
+    const p = e.presence && this._hass.states[e.presence];
+    if (!p) return null;
+    const pol = e.polling && this._hass.states[e.polling];
+    const a = pol?.attributes || {};
+    const auto = e.automation && this._hass.states[e.automation];
+    const time = (iso) => fmt(this._hass, iso);
+    if (p.state === "home") {
+      const seen = time(a.last_seen || p.last_changed);
+      return { cls: "home", label: t.home, icon: "mdi:home", time: seen,
+               title: t.last_seen.replace("{time}", seen) };
+    }
+    if (p.state !== "not_home") return { cls: "", label: t.unknown, icon: "mdi:help", time: "", title: "" };
+    const autoOn = auto ? auto.state === "on" : a.automation_enabled !== false;
+    if (autoOn && pol?.state === "on" && a.automation === "leaving") {
+      const at = a.last_seen && new Date(new Date(a.last_seen).getTime() + (a.away_delay || 0) * 60000);
+      const opens = at ? time(at.toISOString()) : "";
+      return { cls: "leaving", label: t.leaving, icon: "mdi:timer-sand",
+               time: opens ? t.opens_short.replace("{time}", opens) : "",
+               title: opens ? t.opens_at.replace("{time}", opens) : "" };
+    }
+    const left = [...(a.presence_log || [])].reverse().find((ev) => ev.state === "away");
+    const since = time(left?.ts || p.last_changed);
+    return { cls: "away", label: t.away, icon: "mdi:home-export-outline", time: since,
+             title: `${t.away} ${t.since} ${since}` };
   }
 
   _automation(t, e) {
@@ -403,13 +437,10 @@ class TplinkEr6020Card extends HTMLElement {
         <ha-icon icon="${icon}"></ha-icon><div class="bname">${esc(name)}</div><div class="bstate">${esc(state)}</div></div>`;
     };
     const items = [];
-    const p = !this._config.show_title && st(e.presence);
-    if (p) {
-      const home = p.state === "home", away = p.state === "not_home";
+    const pr = !this._config.show_title && this._presence(t, e);
+    if (pr) {
       items.push(btn({
-        open: true, hold: e.presence, icon: home ? "mdi:home" : away ? "mdi:home-export-outline" : "mdi:help",
-        name: home ? t.home : away ? t.away : t.unknown, state: fmt(this._hass, p.last_changed),
-        cls: home ? "home" : away ? "away" : "",
+        open: true, hold: e.presence, icon: pr.icon, name: pr.label, state: pr.time, cls: pr.cls, title: pr.title,
       }));
     }
     if (pol && this._config.show_polling) {
@@ -484,15 +515,15 @@ class TplinkEr6020Card extends HTMLElement {
     </div>`;
 
     const p = e.presence && this._hass.states[e.presence];
-    const home = p?.state === "home", away = p?.state === "not_home";
+    const pr = this._presence(t, e);
     const who = a.tracked_name || a.tracked_device || "?";
     const presenceLog = this._logList("presence", a.presence_log, (ev) =>
       `<li><span class="t">${fmt(this._hass, ev.ts)}</span><span class="s ${ev.state === "home" ? "off" : "on"}">${ev.state === "home" ? t.home : t.away}</span></li>`);
     const presenceSection = p || (a.presence_log || []).length ? `<div class="section">
       <div class="row">
-        <div class="icon ${home ? "home" : away ? "on" : ""}"><ha-icon icon="${home ? "mdi:home" : away ? "mdi:home-export-outline" : "mdi:help"}"></ha-icon></div>
+        <div class="icon ${pr?.cls === "away" ? "on" : pr?.cls || ""}"><ha-icon icon="${pr?.icon || "mdi:help"}"></ha-icon></div>
         <div class="info"><div class="name">${t.presence}</div>
-          <div class="sub">${home ? t.home : away ? t.away : t.unknown}${p && (home || away) ? ` ${t.since} ${fmt(this._hass, p.last_changed)}` : ""}</div></div>
+          <div class="sub">${esc(pr ? (pr.cls === "away" ? pr.title : pr.title ? `${pr.label} · ${pr.title}` : pr.label) : t.unknown)}</div></div>
       </div>
       <div class="desc">${esc(t.presence_desc.replace("{device}", who))}</div>
       ${presenceLog || `<div class="empty">${t.no_events}</div>`}

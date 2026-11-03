@@ -23,7 +23,7 @@ Entities:
 
 The integration ships a Lovelace card — no separate install needed. Edit dashboard → **Add card** → **TP-Link ER6020 AutoPortOnOff**.
 
-- Presence, polling toggle with last update time and errors, automation toggle (🕒 when the schedule is on).
+- Presence: **Home** with the last poll that saw the device, **Leaving** (⏳ device gone, waiting for the away delay — shows when ports will open), **Away** since when it left. Polling toggle with last update time and errors, automation toggle (🕒 when the schedule is on).
 - Selected ports (choose and reorder in the card editor) with status, time of the last change and a toggle.
 - Port names: rename a port in the card editor (or rename its switch entity in Home Assistant) — the name is used on the card, in details and in notifications; empty = router rule name.
 - Tap the card for details: active hours and all ports with the change log.

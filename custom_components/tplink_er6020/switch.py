@@ -189,6 +189,7 @@ class PollingSwitch(CoordinatorEntity[ER6020Coordinator], SwitchEntity):
             "schedule_enabled": opts.get(CONF_SCHEDULE_ENABLED, True),
             "error": error,
             "last_update": c.last_poll,
+            "last_seen": c.last_seen,
             "tracked_device": opts.get(CONF_TRACKED_MAC),
             "tracked_name": self._tracked_name(),
             "poll_interval": poll_interval(opts),

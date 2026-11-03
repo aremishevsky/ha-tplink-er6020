@@ -220,6 +220,9 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
         if not mac or data.present is None:
             return
         state = "home" if mac in data.present else "away"
+        if state == "home":
+            # Persisted together with the next cache/log save, like last_poll.
+            self._stored["last_seen"] = {"mac": mac, "ts": dt_util.utcnow().isoformat()}
         previous = self._stored.get("presence_last")
         self._stored["presence_last"] = state
         if previous is None or previous == state:
@@ -228,6 +231,14 @@ class ER6020Coordinator(DataUpdateCoordinator[RouterData]):
         events.append({"ts": dt_util.utcnow().isoformat(), "state": state})
         del events[:-LOG_SIZE]
         self._save()
+
+    @property
+    def last_seen(self) -> str | None:
+        """Last poll that found the tracked device on the network (ISO, UTC)."""
+        seen = self._stored.get("last_seen") or {}
+        if seen.get("mac") != self.config_entry.options.get(CONF_TRACKED_MAC):
+            return None  # another device was tracked back then
+        return seen.get("ts")
 
     @property
     def presence_log(self) -> list[dict[str, str]]:
